@@ -35,6 +35,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _maybeLoadMore() {
+    if (!_scroll.hasClients) return;
     final query = ref.read(searchQueryProvider);
     if (query.isEmpty) return;
     final metrics = _scroll.position;
@@ -46,7 +47,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _submit(String text) {
     ref.read(searchQueryProvider.notifier).update(text);
-    _scroll.jumpTo(0);
+    // The controller is only attached while a results list exists (the
+    // empty-state placeholder and the loading spinner attach nothing), and a
+    // freshly built list starts at offset 0 anyway — so only reset the
+    // position when a list is actually attached.
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(0);
+    }
   }
 
   Future<void> _play(List<Track> tracks, int index) async {
