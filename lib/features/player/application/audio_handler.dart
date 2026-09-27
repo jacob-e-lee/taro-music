@@ -401,6 +401,12 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
       final TaroFailure failure => failure.message,
       final Object other => 'Playback failed: $other',
     };
+    // Errors thrown by async gaps (just_audio callbacks, resolution) are
+    // outside Flutter's build cycle, so by the time the user notices, the
+    // original throw is long gone from the console. `debugPrint` keeps the
+    // full type + cause chain visible in `flutter logs` while the playback
+    // state carries the human-readable part to the UI.
+    debugPrint('Playback failure for ${track?.id ?? 'unknown'}: $error');
     playbackState.add(
       playbackState.value.copyWith(
         processingState: AudioProcessingState.error,

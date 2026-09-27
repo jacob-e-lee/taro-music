@@ -62,6 +62,10 @@ dev_dependencies:
   build_runner: ^2.16.1
   drift_dev: ^2.35.0
 
+  # Only used by the extractor tests, which build `StreamInfo` values by hand:
+  # the `codec` field of a stream is a `MediaType`.
+  http_parser: ^4.1.2
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

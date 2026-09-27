@@ -7,6 +7,11 @@ import '../../domain/track.dart';
 /// Every implementation must be safe to call concurrently and must throw a
 /// [TaroFailure] (never a raw string) so the chain can classify the error and
 /// decide whether to retry the same source or move on.
+///
+/// It must also *verify* what it returns: a [PlaybackSource] whose URL parses
+/// is not the same thing as a URL that downloads, and handing the unverified
+/// kind to the player produces a silent spinner rather than an error. See
+/// `StreamProbe` for how that check is made.
 abstract interface class StreamExtractor {
   /// The provider this extractor talks to.
   MediaSourceKind get kind;

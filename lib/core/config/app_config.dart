@@ -21,6 +21,23 @@ class AppConfig {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/96.0.4664.18 Safari/537.36';
 
+  /// How long a resolved URL has to answer a [streamProbeRange] request before
+  /// the extractors write it off and try the next candidate.
+  static const Duration streamProbeTimeout = Duration(seconds: 8);
+
+  /// The request used to prove a stream is playable before the player gets it.
+  ///
+  /// One byte is enough for `googlevideo.com` to answer `206` (playable) or
+  /// `403` (the client whose URL this is has been gated), and asking for a
+  /// single byte means a server that ignores `Range` still cannot make the app
+  /// download a whole file to find that out. The probe sends the player's own
+  /// headers, so it fails for exactly the reasons the player would.
+  static const String streamProbeRange = 'bytes=0-0';
+
+  /// The header [streamProbeRange] travels in. `dio`'s `Headers` only names
+  /// accept/content-*/www-authenticate, so the name lives here.
+  static const String streamProbeRangeHeader = 'range';
+
   /// Ordered fallback list of Piped API instances (public/community mirrors).
   /// Public instances come and go, so several are kept and the chain tries each
   /// one until something answers. The user can override this in settings later.

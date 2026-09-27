@@ -6,6 +6,7 @@ import '../../../../core/errors/failures.dart';
 import '../../domain/playback_source.dart';
 import '../../domain/track.dart';
 import 'stream_extractor.dart';
+import 'stream_probe.dart';
 
 /// Fallback extractor: asks a Piped instance (a privacy proxy in front of
 /// YouTube) for the same track.
@@ -14,11 +15,20 @@ import 'stream_extractor.dart';
 /// a cursor into [instances] and advances it on every network-level failure.
 /// Combined with the chain's retry, that means each attempt hits a *different*
 /// mirror, which is what actually makes Piped usable in practice.
+///
+/// Piped hands back `googlevideo.com` URLs minted by whichever client *it*
+/// chose, so those URLs are subject to the same silent `403` as YouTube's own —
+/// [StreamProbe] therefore guards this path too, with the instance rotated out
+/// when it offers something unplayable.
 class PipedExtractor implements StreamExtractor {
-  PipedExtractor(this._dio, {this.instances = AppConfig.pipedInstances})
-    : assert(instances.isNotEmpty, 'at least one Piped instance is required');
+  PipedExtractor(
+    this._dio, {
+    required this._probe,
+    this.instances = AppConfig.pipedInstances,
+  }) : assert(instances.isNotEmpty, 'at least one Piped instance is required');
 
   final Dio _dio;
+  final StreamProbe _probe;
   final List<String> instances;
 
   int _cursor = 0;
@@ -94,13 +104,30 @@ class PipedExtractor implements StreamExtractor {
       );
     }
 
-    return PlaybackSource(
+    final source = PlaybackSource(
       url: Uri.parse(url),
       source: kind,
       codec: best['codec'] as String? ?? best['mimeType'] as String?,
       bitrate: _bitrateOf(best),
       qualityLabel: best['quality'] as String?,
     );
+
+    switch (await _probe.check(source)) {
+      case StreamProbeOk():
+        return source;
+      case StreamProbeRejected(:final detail):
+        rotateInstance();
+        throw NoPlayableStreamFailure(
+          '$label@$host offered an unplayable stream ($detail)',
+          source: kind,
+        );
+      case StreamProbeUnreachable(:final detail):
+        rotateInstance();
+        throw NetworkFailure(
+          '$label@$host stream never answered ($detail)',
+          source: kind,
+        );
+    }
   }
 
   static int _bitrateOf(Map<String, dynamic> stream) {

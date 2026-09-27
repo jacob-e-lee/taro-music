@@ -4,6 +4,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../features/player/data/extractors/extractor_chain.dart';
 import '../../features/player/data/extractors/piped_extractor.dart';
 import '../../features/player/data/extractors/stream_extractor.dart';
+import '../../features/player/data/extractors/stream_probe.dart';
 import '../../features/player/data/extractors/youtube_extractor.dart';
 import '../../features/player/data/repositories/fallback_media_repository.dart';
 import '../../features/player/data/sources/piped_search_source.dart';
@@ -37,6 +38,9 @@ class MediaStack {
         headers: <String, dynamic>{'User-Agent': AppConfig.extractionUserAgent},
       ),
     );
+    // One probe for every extractor: it borrows the same client pool the
+    // providers use, so validating a URL costs a round trip, not a socket.
+    final probe = HttpStreamProbe(dio);
 
     return MediaStack._(
       youtube: youtube,
@@ -49,8 +53,8 @@ class MediaStack {
           PipedSearchSource(dio),
         ],
         extractorChain: ExtractorChain(<StreamExtractor>[
-          YoutubeExtractor(youtube),
-          PipedExtractor(dio),
+          YoutubeExtractor(youtube, probe: probe),
+          PipedExtractor(dio, probe: probe),
         ]),
       ),
     );

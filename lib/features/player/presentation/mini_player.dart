@@ -74,8 +74,20 @@ class MiniPlayer extends ConsumerWidget {
                               ),
                             ),
                             if (state.processingState ==
-                                AudioProcessingState.loading)
+                                    AudioProcessingState.loading ||
+                                state.processingState ==
+                                    AudioProcessingState.buffering)
                               const LinearProgressIndicator(minHeight: 2),
+                            if (state.processingState ==
+                                AudioProcessingState.error)
+                              Text(
+                                state.errorMessage ?? 'Playback failed',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.error,
+                                ),
+                              ),
                           ],
                         ),
                       ),
