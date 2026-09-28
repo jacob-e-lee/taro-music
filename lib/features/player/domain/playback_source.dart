@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/errors/failures.dart';
 
 /// A concrete, ready-to-feed audio URL for a [Track], together with the
@@ -10,36 +9,55 @@ import '../../../core/errors/failures.dart';
 /// is treated as short lived and never persisted.
 @immutable
 class PlaybackSource {
-  const PlaybackSource({
+  /// Not `const`: [headers] is derived from [userAgent] at construction, and a
+  /// null-aware map entry is not a compile-time constant. No caller needs a
+  /// const instance (a `PlaybackSource` is always freshly resolved).
+  PlaybackSource({
     required this.url,
     required this.source,
-    this.headers = const <String, String>{},
     this.codec,
     this.bitrate,
     this.qualityLabel,
-  });
+    this.userAgent,
+  }) : headers = <String, String>{
+         // Null-aware *value*: a source with no UA contributes no header, and no
+         // header means the caller's own default is used.
+         'user-agent': ?userAgent,
+       };
 
   /// A YouTube `googlevideo.com` stream. These reject requests whose
   /// `User-Agent` does not match the one used at extraction time, so the header
   /// is attached here rather than being left to the player's default.
+  ///
+  /// [userAgent] is the client-specific UA that minted this URL — `tv` speaks
+  /// Cobalt, `ios` speaks the iOS YouTube app, `android_vr`/`android_sdkless`
+  /// speak the Android app. A single shared string cannot serve all of them,
+  /// so the extractor passes the per-client one in.
   factory PlaybackSource.youtube({
     required Uri url,
     String? codec,
     int? bitrate,
     String? qualityLabel,
+    String? userAgent,
   }) => PlaybackSource(
     url: url,
     source: MediaSourceKind.youtube,
     codec: codec,
     bitrate: bitrate,
     qualityLabel: qualityLabel,
-    headers: const <String, String>{
-      'user-agent': AppConfig.extractionUserAgent,
-    },
+    userAgent: userAgent,
   );
 
   final Uri url;
   final MediaSourceKind source;
+
+  /// The exact `User-Agent` this URL was signed for. `null` for a source that
+  /// needs none, in which case [headers] stays empty and the player picks its
+  /// own default.
+  final String? userAgent;
+
+  /// What the probe and `just_audio` both send. Derived rather than passed in
+  /// so a `PlaybackSource` can never hold a UA that disagrees with its headers.
   final Map<String, String> headers;
 
   /// e.g. `mp4a.40.2` (AAC in MP4) or `opus`.

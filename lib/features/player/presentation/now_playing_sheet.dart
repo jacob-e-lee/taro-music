@@ -1,11 +1,11 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../application/audio_handler.dart';
+import '../application/webview_audio_handler.dart';
 import '../application/providers.dart';
 import '../domain/track.dart';
 import 'player_sheet_controller.dart';
@@ -140,7 +140,7 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
   /// collapsed to the mini strip so the bar has docked under it.
   Widget _buildBody(
     BuildContext context, {
-    required MusicAudioHandler handler,
+    required WebViewAudioHandler handler,
     required MediaItem item,
     required bool isOffline,
   }) {
@@ -360,7 +360,7 @@ class _MorphingPlayer extends StatelessWidget {
   final double revealEase;
   final MediaItem item;
   final bool isOffline;
-  final MusicAudioHandler handler;
+  final WebViewAudioHandler handler;
 
   static const double _artSmall = 48;
   static const double _sidePad = 24;
@@ -649,7 +649,7 @@ class _MorphingTitle extends StatelessWidget {
 class _MiniTransport extends StatelessWidget {
   const _MiniTransport({required this.handler});
 
-  final MusicAudioHandler handler;
+  final WebViewAudioHandler handler;
 
   @override
   Widget build(BuildContext context) {
@@ -867,7 +867,7 @@ class _SwipeableAlbumArtState extends State<_SwipeableAlbumArt>
 class _SeekBar extends StatelessWidget {
   const _SeekBar({required this.handler});
 
-  final MusicAudioHandler handler;
+  final WebViewAudioHandler handler;
 
   @override
   Widget build(BuildContext context) {
@@ -931,7 +931,7 @@ class _SeekBar extends StatelessWidget {
 class _PlayerControls extends StatefulWidget {
   const _PlayerControls({required this.handler});
 
-  final MusicAudioHandler handler;
+  final WebViewAudioHandler handler;
 
   @override
   State<_PlayerControls> createState() => _PlayerControlsState();

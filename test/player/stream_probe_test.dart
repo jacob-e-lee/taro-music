@@ -46,12 +46,10 @@ HttpStreamProbe _probe(
   return HttpStreamProbe(dio, timeout: timeout);
 }
 
-PlaybackSource _source({
-  Map<String, String> headers = const <String, String>{},
-}) => PlaybackSource(
+PlaybackSource _source({String? userAgent}) => PlaybackSource(
   url: Uri.parse('https://rr1---sn-test.googlevideo.com/videoplayback?id=1'),
   source: MediaSourceKind.youtube,
-  headers: headers,
+  userAgent: userAgent,
 );
 
 void main() {
@@ -113,9 +111,7 @@ void main() {
         return ResponseBody.fromBytes(<int>[0], 206);
       });
 
-      await probe.check(
-        _source(headers: const <String, String>{'user-agent': 'test-agent'}),
-      );
+      await probe.check(_source(userAgent: 'test-agent'));
 
       expect(
         sent.headers[AppConfig.streamProbeRangeHeader],

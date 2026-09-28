@@ -1,39 +1,21 @@
-import 'package:audio_service/audio_service.dart';
+﻿import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:taro_music/app/taro_music_app.dart';
-import 'package:taro_music/features/player/application/audio_handler.dart';
+import 'package:taro_music/features/player/application/webview_audio_handler.dart';
 import 'package:taro_music/features/player/application/providers.dart';
-import 'package:taro_music/features/player/domain/media_repository.dart';
-import 'package:taro_music/features/player/domain/playback_source.dart';
-import 'package:taro_music/features/player/domain/search_results.dart';
-import 'package:taro_music/features/player/domain/track.dart';
 import 'package:taro_music/features/player/presentation/now_playing_sheet.dart';
 import 'package:taro_music/features/player/presentation/player_sheet_controller.dart';
 
-/// A stub repository: the widget tests below never trigger search or stream
-/// resolution, so every call just throws. Constructing the real handler is
-/// safe because `AudioPlayer()` only touches platform channels once playback
-/// starts, which these tests never do.
-class _StubRepository implements MediaRepository {
-  @override
-  Future<SearchResults> search(
-    String query, {
-    String? continuation,
-    SearchScope filter = SearchScope.songs,
-  }) => throw UnimplementedError('not used in widget tests');
-
-  @override
-  void noteRefused(Track track) {}
-
-  @override
-  Future<PlaybackSource> resolveSource(Track track) =>
-      throw UnimplementedError('not used in widget tests');
-}
-
-MusicAudioHandler? _lastHandler;
+/// A shell with no media loaded yet.
+///
+/// The handler is constructed but never `start()`ed: a real WebView needs
+/// platform channels that a widget test does not have, and the handler is
+/// inert without it — queue commands issued early are simply dropped. That
+/// keeps these tests about the UI rather than about the audio engine.
+WebViewAudioHandler? _lastHandler;
 
 /// A shell with no media loaded yet.
 Widget _playerApp() {
@@ -99,8 +81,7 @@ Future<void> _peek(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-MusicAudioHandler _handler() =>
-    MusicAudioHandler(repository: _StubRepository());
+WebViewAudioHandler _handler() => WebViewAudioHandler();
 
 Widget _app({String? initialRoute}) => ProviderScope(
   overrides: [audioHandlerProvider.overrideWithValue(_handler())],

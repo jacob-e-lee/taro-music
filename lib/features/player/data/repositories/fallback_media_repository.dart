@@ -1,4 +1,4 @@
-import '../../../../core/config/app_config.dart';
+﻿import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/retry_policy.dart';
 import '../../domain/media_repository.dart';
@@ -8,8 +8,8 @@ import '../../domain/track.dart';
 import '../extractors/extractor_chain.dart';
 import '../sources/search_source.dart';
 
-/// Applies the YouTube -> Piped fallback rule to both search and stream
-/// resolution, with per-source retries in front of each attempt.
+/// Applies the provider fallback rule to both search and stream resolution,
+/// with per-source retries in front of each attempt.
 ///
 /// The design goal is that a dead provider adds *latency*, not an error screen:
 /// every source is tried before anything is reported as failed, and the

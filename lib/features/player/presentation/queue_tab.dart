@@ -1,7 +1,7 @@
-import 'package:audio_service/audio_service.dart';
+﻿import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 
-import '../application/audio_handler.dart';
+import '../application/webview_audio_handler.dart';
 import '../domain/track.dart';
 
 /// The "Up Next" queue, rendered as a **sliver** rather than a box widget.
@@ -16,7 +16,7 @@ import '../domain/track.dart';
 class QueueTab extends StatelessWidget {
   const QueueTab({super.key, required this.handler});
 
-  final MusicAudioHandler handler;
+  final WebViewAudioHandler handler;
 
   @override
   Widget build(BuildContext context) {
@@ -92,7 +92,7 @@ class _QueueRow extends StatelessWidget {
   final int index;
   final MediaItem item;
   final bool isPlayingThis;
-  final MusicAudioHandler handler;
+  final WebViewAudioHandler handler;
 
   @override
   Widget build(BuildContext context) {

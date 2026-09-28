@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/config/app_config.dart';
+import '../features/player/application/webview_bridge.dart';
+import '../features/player/presentation/youtube_webview_player.dart';
 import 'routes.dart';
 import 'shell_screen.dart';
 
@@ -28,6 +30,19 @@ class TaroMusicApp extends StatelessWidget {
       initialRoute: initialRoute,
       onGenerateRoute: AppRoutes.onGenerateRoute,
       home: const ShellScreen(),
+      // The audio engine lives here, above the navigator, so it survives
+      // every route change. `Offstage` inside the widget keeps it invisible.
+      //
+      // Gated on `enabled`, which only `main()` turns on: a widget test cannot
+      // create a platform view, and the player would otherwise be built in
+      // every one of them.
+      builder: (context, child) => Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          child ?? const SizedBox.shrink(),
+          if (YouTubeWebViewBridge.enabled) const YoutubeWebviewPlayer(),
+        ],
+      ),
     );
   }
 }

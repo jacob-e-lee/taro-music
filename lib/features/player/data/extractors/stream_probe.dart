@@ -63,8 +63,12 @@ abstract interface class StreamProbe {
 /// Probes a URL with the same request the player is about to make, minus the
 /// payload: `Range: bytes=0-0` and the source's own headers.
 ///
-/// Sharing the headers matters — the probe is only meaningful if it fails for
-/// the same reason the player would.
+/// Sharing the headers is the whole point: YouTube signs each stream URL for
+/// one specific Innertube client and refuses it (`403`) for anyone else, so a
+/// probe that sent a generic User-Agent would happily report "playable" for a
+/// URL the player then gets refused. [PlaybackSource.userAgent] therefore
+/// travels in these headers, and the exact same map is what
+/// `just_audio`'s `setUrl(headers: …)` receives — one string, two consumers.
 class HttpStreamProbe implements StreamProbe {
   HttpStreamProbe(this._dio, {this.timeout = AppConfig.streamProbeTimeout});
 

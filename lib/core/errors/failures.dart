@@ -5,6 +5,10 @@ enum MediaSourceKind {
 
   /// The privacy proxy (Piped) fronted by [MediaSourceKind.youtube].
   piped,
+
+  /// The Cobalt proxy. It performs YouTube's token exchange server-side, so
+  /// this is the only path that yields a playable URL today.
+  cobalt,
 }
 
 /// Base class for every expected error surfaced to the UI.

@@ -1,4 +1,4 @@
-name: taro_music
+﻿name: taro_music
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -36,7 +36,6 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^3.4.3
   riverpod_annotation: ^4.0.7
-  just_audio: ^0.10.6
   audio_service: ^0.18.19
   audio_session: ^0.2.4
   youtube_explode_dart: ^3.1.0
@@ -61,10 +60,6 @@ dev_dependencies:
   riverpod_generator: ^4.0.9
   build_runner: ^2.16.1
   drift_dev: ^2.35.0
-
-  # Only used by the extractor tests, which build `StreamInfo` values by hand:
-  # the `codec` field of a stream is a `MediaType`.
-  http_parser: ^4.1.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -60,7 +60,12 @@ class PipedSearchSource implements SearchSource {
         },
         options: Options(
           responseType: ResponseType.json,
-          headers: const <String, String>{'Accept': 'application/json'},
+          // Same reason as the extractor: Cloudflare in front of these
+          // instances refuses the default Dart/http User-Agent.
+          headers: const <String, String>{
+            'User-Agent': AppConfig.browserUserAgent,
+            'Accept': 'application/json',
+          },
         ),
       );
     } on DioException catch (error) {
