@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failures.dart';
@@ -108,6 +109,22 @@ class ExtractorChain {
       'by ${track.artist}',
       failures: failures,
     );
+  }
+
+  /// Tells every extractor that the player refused what they last handed out.
+  ///
+  /// Each extractor advances whatever cursor it has (Innertube client, Piped
+  /// instance), so the next [resolve] returns a genuinely different URL rather
+  /// than the same gated one.
+  void noteRefused(Track track) {
+    for (final entry in _entries) {
+      try {
+        entry.extractor.noteRefused(track);
+      } on Object catch (error) {
+        // A misbehaving hook must never break playback recovery.
+        debugPrint('noteRefused failed for ${entry.extractor.label}: $error');
+      }
+    }
   }
 
   /// The hinted source first, everything else in its declared order.

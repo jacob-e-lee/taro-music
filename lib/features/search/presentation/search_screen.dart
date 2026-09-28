@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../player/application/providers.dart';
+import '../../player/domain/search_results.dart';
 import '../../player/domain/track.dart';
 import '../application/search_providers.dart';
 import 'track_tile.dart';
@@ -40,7 +41,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (query.isEmpty) return;
     final metrics = _scroll.position;
     if (metrics.pixels < metrics.maxScrollExtent - 400) return;
-    final notifier = ref.read(searchProvider(query).notifier);
+    final notifier = ref.read(
+      searchProvider(query, ref.read(searchScopeFilterProvider)).notifier,
+    );
     // Fire and forget: failures surface as a snack bar from the tile row.
     unawaited(notifier.loadMore());
   }
@@ -51,6 +54,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // empty-state placeholder and the loading spinner attach nothing), and a
     // freshly built list starts at offset 0 anyway — so only reset the
     // position when a list is actually attached.
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(0);
+    }
+  }
+
+  /// Switching Songs/Videos re-runs the current query against the new scope,
+  /// so the list is scrolled back to the top for the fresh result set.
+  void _selectScope(SearchScope scope) {
+    if (ref.read(searchScopeFilterProvider) == scope) return;
+    ref.read(searchScopeFilterProvider.notifier).select(scope);
     if (_scroll.hasClients) {
       _scroll.jumpTo(0);
     }
@@ -70,6 +83,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final query = ref.watch(searchQueryProvider);
+    final scope = ref.watch(searchScopeFilterProvider);
     return Column(
       children: <Widget>[
         Padding(
@@ -98,8 +112,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
         ),
+        // Songs / Videos scope toggle directly under the search bar.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SegmentedButton<SearchScope>(
+              segments: <ButtonSegment<SearchScope>>[
+                for (final option in SearchScope.values)
+                  ButtonSegment<SearchScope>(
+                    value: option,
+                    label: Text(option.label),
+                    icon: Icon(
+                      option == SearchScope.songs
+                          ? Icons.music_note
+                          : Icons.videocam_outlined,
+                    ),
+                  ),
+              ],
+              selected: <SearchScope>{scope},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) => _selectScope(selection.first),
+            ),
+          ),
+        ),
         Expanded(
-          child: _Results(query: query, scroll: _scroll, onTap: _play),
+          child: _Results(
+            query: query,
+            scope: scope,
+            scroll: _scroll,
+            onTap: _play,
+          ),
         ),
       ],
     );
@@ -109,11 +152,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 class _Results extends ConsumerWidget {
   const _Results({
     required this.query,
+    required this.scope,
     required this.scroll,
     required this.onTap,
   });
 
   final String query;
+  final SearchScope scope;
   final ScrollController scroll;
   final Future<void> Function(List<Track>, int) onTap;
 
@@ -132,7 +177,7 @@ class _Results extends ConsumerWidget {
       );
     }
 
-    final results = ref.watch(searchProvider(query));
+    final results = ref.watch(searchProvider(query, scope));
     return results.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => Center(
@@ -147,7 +192,7 @@ class _Results extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             FilledButton.tonal(
-              onPressed: () => ref.invalidate(searchProvider(query)),
+              onPressed: () => ref.invalidate(searchProvider(query, scope)),
               child: const Text('Retry'),
             ),
           ],

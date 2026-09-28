@@ -36,7 +36,11 @@ class FallbackMediaRepository implements MediaRepository {
   List<ExtractorStatus> get extractorStatuses => _chain.statuses;
 
   @override
-  Future<SearchResults> search(String query, {String? continuation}) async {
+  Future<SearchResults> search(
+    String query, {
+    String? continuation,
+    SearchScope filter = SearchScope.songs,
+  }) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       return const SearchResults(tracks: [], source: MediaSourceKind.youtube);
@@ -62,7 +66,7 @@ class FallbackMediaRepository implements MediaRepository {
     for (final source in candidates) {
       try {
         return await withRetry(
-          () => source.search(trimmed, continuation: token),
+          () => source.search(trimmed, continuation: token, filter: filter),
           maxAttempts: attemptsPerSource,
           baseDelay: baseDelay,
           maxDelay: maxDelay,
@@ -80,6 +84,9 @@ class FallbackMediaRepository implements MediaRepository {
 
   @override
   Future<PlaybackSource> resolveSource(Track track) => _chain.resolve(track);
+
+  @override
+  void noteRefused(Track track) => _chain.noteRefused(track);
 
   static TaroFailure _asFailure(Object error, MediaSourceKind kind) =>
       error is TaroFailure

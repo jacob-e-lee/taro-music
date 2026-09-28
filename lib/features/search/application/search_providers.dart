@@ -22,7 +22,25 @@ class SearchQuery extends _$SearchQuery {
   void clear() => state = '';
 }
 
-/// One page-set of search results per [query], plus cursor pagination.
+/// Which slice of the catalogue the user is searching (songs or videos).
+///
+/// Kept beside [SearchQuery] so flipping the toggle re-runs the current query
+/// against the other filter instead of requiring a new search.
+///
+/// Named `...Filter` (rather than `SearchScope`) because the generated
+/// provider class must not shadow the [SearchScope] enum it returns.
+@riverpod
+class SearchScopeFilter extends _$SearchScopeFilter {
+  @override
+  SearchScope build() => SearchScope.songs;
+
+  void select(SearchScope value) {
+    if (value == state) return;
+    state = value;
+  }
+}
+
+/// One page-set of search results per [query] and [scope], plus cursor pagination.
 ///
 /// Pagination is deliberately *not* modelled as a new provider state per page:
 /// `loadMore` appends into the same [SearchResults] so the list never rebuilds
@@ -32,9 +50,9 @@ class Search extends _$Search {
   bool _loadingMore = false;
 
   @override
-  Future<SearchResults> build(String query) {
+  Future<SearchResults> build(String query, SearchScope scope) {
     _loadingMore = false;
-    return ref.watch(mediaRepositoryProvider).search(query);
+    return ref.watch(mediaRepositoryProvider).search(query, filter: scope);
   }
 
   /// Fetches the next page and appends it.
@@ -51,7 +69,7 @@ class Search extends _$Search {
     try {
       final next = await ref
           .read(mediaRepositoryProvider)
-          .search(query, continuation: current.continuation);
+          .search(query, continuation: current.continuation, filter: scope);
       state = AsyncData(
         SearchResults(
           tracks: <Track>[...current.tracks, ...next.tracks],

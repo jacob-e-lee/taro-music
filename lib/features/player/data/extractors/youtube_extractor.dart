@@ -22,8 +22,10 @@ class YoutubeClientProfile {
 }
 
 /// Fetches a manifest for [videoId] using exactly [client].
-typedef YoutubeManifestLoader =
-    Future<StreamManifest> Function(String videoId, YoutubeApiClient client);
+typedef YoutubeManifestLoader = Future<StreamManifest> Function(
+  String videoId,
+  YoutubeApiClient client,
+);
 
 /// Primary extractor: asks YouTube directly through `youtube_explode_dart`.
 ///
@@ -59,13 +61,29 @@ class YoutubeExtractor implements StreamExtractor {
 
   /// Tried in this order until one produces a URL that actually downloads.
   ///
-  /// `android_vr` leads because YouTube does not (yet) make it carry a
-  /// `PO token`, which is exactly what the default `android_sdkless` client is
-  /// missing when it is handed label music.
-  static const List<YoutubeClientProfile> defaultClients =
+  /// `tv` (TVHTML5) leads because YouTube has been gating its *Android*
+  /// clients for label-uploaded music — i.e. most of what this app plays —
+  /// and a TV client sidesteps that gate (and, for now, needs no `PO token`).
+  /// `android_vr` follows: also no PO token. `ios` comes next; per the
+  /// package it needs no signature deciphering. The package's default
+  /// `android_sdkless` brings up the rear as the last Android hope.
+  ///
+  /// A client whose URLs need `sig`/`n` deciphering is simply rejected by
+  /// [StreamProbe]'s byte check when no JS solver is available (never is on
+  /// a phone — see `initJsSolver`), so ordering costs a round trip, not a
+  /// broken track.
+  ///
+  /// `final` rather than `const`: [YoutubeApiClient.ios] is itself a
+  /// `static final`, so the list cannot be const-constructed.
+  static final List<YoutubeClientProfile> defaultClients =
       <YoutubeClientProfile>[
+        YoutubeClientProfile('tv', YoutubeApiClient.tv),
         YoutubeClientProfile('android_vr', YoutubeApiClient.androidVr),
-        YoutubeClientProfile('android_sdkless', YoutubeApiClient.androidSdkless),
+        YoutubeClientProfile('ios', YoutubeApiClient.ios),
+        YoutubeClientProfile(
+          'android_sdkless',
+          YoutubeApiClient.androidSdkless,
+        ),
       ];
 
   /// How many of a client's streams are worth probing before writing that
@@ -89,6 +107,15 @@ class YoutubeExtractor implements StreamExtractor {
 
   /// The client currently trusted first; exposed for the diagnostics screen.
   YoutubeClientProfile get preferredClient => _clients[_preferredIndex];
+
+  @override
+  void noteRefused(Track track) {
+    // The player was refused a URL this extractor had already verified, which
+    // means the client that produced it is gated. Move to the next one so the
+    // next extraction mints a different (and hopefully unblocked) URL.
+    if (_clients.length < 2) return;
+    _preferredIndex = (_preferredIndex + 1) % _clients.length;
+  }
 
   @override
   Future<PlaybackSource> extract(Track track) async {
@@ -163,14 +190,14 @@ class YoutubeExtractor implements StreamExtractor {
   /// The streams worth probing, best first (see the class doc).
   static List<StreamInfo> _candidates(StreamManifest manifest) {
     final aac = manifest.audioOnly.where(_isAac).toList()..sort(_byBitrate);
-    final rest = manifest.audioOnly
-        .where((stream) => !_isAac(stream))
-        .toList()
+    final rest = manifest.audioOnly.where((stream) => !_isAac(stream)).toList()
       ..sort(_byBitrate);
     final muxed = manifest.muxed.toList()..sort(_byBitrate);
-    return <StreamInfo>[...aac, ...rest, ...muxed]
-        .take(maxCandidatesPerClient)
-        .toList(growable: false);
+    return <StreamInfo>[
+      ...aac,
+      ...rest,
+      ...muxed,
+    ].take(maxCandidatesPerClient).toList(growable: false);
   }
 
   /// ExoPlayer plays AAC without a plug-in; Opus and Vorbis it decodes in
@@ -188,4 +215,3 @@ class YoutubeExtractor implements StreamExtractor {
     qualityLabel: stream.qualityLabel,
   );
 }
-

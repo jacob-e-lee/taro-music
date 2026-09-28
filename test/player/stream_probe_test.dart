@@ -46,18 +46,17 @@ HttpStreamProbe _probe(
   return HttpStreamProbe(dio, timeout: timeout);
 }
 
-PlaybackSource _source({Map<String, String> headers = const <String, String>{}}) =>
-    PlaybackSource(
-      url: Uri.parse('https://rr1---sn-test.googlevideo.com/videoplayback?id=1'),
-      source: MediaSourceKind.youtube,
-      headers: headers,
-    );
+PlaybackSource _source({
+  Map<String, String> headers = const <String, String>{},
+}) => PlaybackSource(
+  url: Uri.parse('https://rr1---sn-test.googlevideo.com/videoplayback?id=1'),
+  source: MediaSourceKind.youtube,
+  headers: headers,
+);
 
 void main() {
   test('a 206 answer proves the URL is playable', () async {
-    final probe = _probe(
-      (_) async => ResponseBody.fromBytes(<int>[0], 206),
-    );
+    final probe = _probe((_) async => ResponseBody.fromBytes(<int>[0], 206));
 
     final result = await probe.check(_source());
 
@@ -105,20 +104,25 @@ void main() {
     expect(result.detail, contains('no route to host'));
   });
 
-  test('asks for one byte only, with the headers the player will send', () async {
-    late RequestOptions sent;
-    final probe = _probe((options) async {
-      sent = options;
-      return ResponseBody.fromBytes(<int>[0], 206);
-    });
+  test(
+    'asks for one byte only, with the headers the player will send',
+    () async {
+      late RequestOptions sent;
+      final probe = _probe((options) async {
+        sent = options;
+        return ResponseBody.fromBytes(<int>[0], 206);
+      });
 
-    await probe.check(
-      _source(headers: const <String, String>{'user-agent': 'test-agent'}),
-    );
+      await probe.check(
+        _source(headers: const <String, String>{'user-agent': 'test-agent'}),
+      );
 
-    expect(sent.headers[AppConfig.streamProbeRangeHeader],
-        AppConfig.streamProbeRange);
-    expect(sent.responseType, ResponseType.stream);
-    expect(sent.headers['user-agent'], 'test-agent');
-  });
+      expect(
+        sent.headers[AppConfig.streamProbeRangeHeader],
+        AppConfig.streamProbeRange,
+      );
+      expect(sent.responseType, ResponseType.stream);
+      expect(sent.headers['user-agent'], 'test-agent');
+    },
+  );
 }

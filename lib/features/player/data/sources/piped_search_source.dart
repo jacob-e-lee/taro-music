@@ -7,8 +7,8 @@ import '../../domain/track.dart';
 import 'search_source.dart';
 
 /// Fallback search source: a Piped instance's `/search` endpoint filtered to
-/// `music_songs`, which returns only playable tracks (no channels, no
-/// playlists, no vlog noise).
+/// `music_songs` or `music_videos`, which returns only playable tracks (no
+/// channels, no playlists, no vlog noise).
 ///
 /// Like [PipedExtractor] it rotates to the next instance on every network
 /// failure, so a dead mirror costs one attempt rather than the whole search.
@@ -21,6 +21,9 @@ class PipedSearchSource implements SearchSource {
 
   final Dio _dio;
   final List<String> instances;
+
+  /// Fallback filter used when a caller does not specify one, so this source
+  /// keeps working as a plain `music_songs` provider outside the search UI.
   final String filter;
 
   int _cursor = 0;
@@ -37,7 +40,11 @@ class PipedSearchSource implements SearchSource {
   void rotateInstance() => _cursor++;
 
   @override
-  Future<SearchResults> search(String query, {String? continuation}) async {
+  Future<SearchResults> search(
+    String query, {
+    String? continuation,
+    SearchScope filter = SearchScope.songs,
+  }) async {
     final base = currentInstance;
     final host = Uri.parse(base).host;
 
@@ -47,7 +54,7 @@ class PipedSearchSource implements SearchSource {
         '$base/search',
         queryParameters: <String, dynamic>{
           'q': query,
-          'filter': filter,
+          'filter': filter.pipedValue,
           if (continuation != null && continuation.isNotEmpty)
             'nextpage': continuation,
         },

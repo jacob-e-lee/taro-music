@@ -11,6 +11,10 @@ abstract interface class SearchSource {
 
   /// Fetches one page of results. [continuation] is an *untagged* token
   /// previously returned inside [SearchResults.continuation]; pass null for the
-  /// first page.
-  Future<SearchResults> search(String query, {String? continuation});
+  /// first page. [filter] selects the songs/videos slice of the catalogue.
+  Future<SearchResults> search(
+    String query, {
+    String? continuation,
+    SearchScope filter = SearchScope.songs,
+  });
 }

@@ -25,7 +25,7 @@ Future<void> main() async {
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
-  final stack = MediaStack.live();
+  final stack = MediaStack.live(jsSolver: await initJsSolver());
   final handler = await AudioService.init(
     builder: () => MusicAudioHandler(repository: stack.repository),
     config: const AudioServiceConfig(

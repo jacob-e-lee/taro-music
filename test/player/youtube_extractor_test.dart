@@ -18,6 +18,15 @@ const String _vrUrl =
     'https://rr1---sn-vr.googlevideo.com/videoplayback?c=ANDROID_VR';
 const String _sdklessUrl =
     'https://rr1---sn-sdkless.googlevideo.com/videoplayback?c=ANDROID';
+const String _tvUrl = 'https://rr1---sn-tv.googlevideo.com/videoplayback?c=TV';
+
+/// The two clients the original scenarios script. `defaultClients` has since
+/// gained `tv` and `ios`, which these scenarios never mention, so they pin
+/// this list to keep testing the mechanics rather than the default order.
+const List<YoutubeClientProfile> _scriptedClients = <YoutubeClientProfile>[
+  YoutubeClientProfile('android_vr', YoutubeApiClient.androidVr),
+  YoutubeClientProfile('android_sdkless', YoutubeApiClient.androidSdkless),
+];
 
 /// The probe, scripted per URL: anything unscripted is treated as unreachable
 /// so a test can never silently pass a URL it did not expect.
@@ -73,8 +82,13 @@ StreamManifest _manifest(List<AudioOnlyStreamInfo> streams) =>
     StreamManifest(<StreamInfo>[...streams]);
 
 final AudioOnlyStreamInfo _aacOnVr = _audio(_vrUrl, 140, 'mp4a.40.2', 130);
-final AudioOnlyStreamInfo _aacOnSdkless =
-    _audio(_sdklessUrl, 140, 'mp4a.40.2', 130);
+final AudioOnlyStreamInfo _aacOnSdkless = _audio(
+  _sdklessUrl,
+  140,
+  'mp4a.40.2',
+  130,
+);
+final AudioOnlyStreamInfo _aacOnTv = _audio(_tvUrl, 140, 'mp4a.40.2', 130);
 
 void main() {
   late YoutubeExplode youtube;
@@ -82,15 +96,23 @@ void main() {
   setUp(() => youtube = YoutubeExplode());
   tearDown(() => youtube.close());
 
-  YoutubeExtractor extractor(_ScriptedProbe probe, _RecordingLoader loader) =>
-      YoutubeExtractor(youtube, probe: probe, loadManifest: loader.call);
+  YoutubeExtractor extractor(
+    _ScriptedProbe probe,
+    _RecordingLoader loader, {
+    List<YoutubeClientProfile>? clients,
+  }) => YoutubeExtractor(
+    youtube,
+    probe: probe,
+    loadManifest: loader.call,
+    clients: clients ?? _scriptedClients,
+  );
 
   test('returns the first client whose URL really downloads', () async {
     final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
       YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
-      YoutubeApiClient.androidSdkless: _manifest(
-        <AudioOnlyStreamInfo>[_aacOnSdkless],
-      ),
+      YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+        _aacOnSdkless,
+      ]),
     });
     final probe = _ScriptedProbe(<String, StreamProbeResult>{
       _vrUrl: const StreamProbeOk(206),
@@ -104,12 +126,41 @@ void main() {
     expect(loader.clients, <YoutubeApiClient>[YoutubeApiClient.androidVr]);
   });
 
+  test(
+    'a player refusal rotates the client even though the probe passed',
+    () async {
+      final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
+        YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
+        YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+          _aacOnSdkless,
+        ]),
+      });
+      // Both URLs answer the probe, so extraction has no reason to move on.
+      final probe = _ScriptedProbe(<String, StreamProbeResult>{
+        _vrUrl: const StreamProbeOk(206),
+        _sdklessUrl: const StreamProbeOk(206),
+      });
+
+      final subject = extractor(probe, loader);
+      expect((await subject.extract(_track)).url.toString(), _vrUrl);
+
+      // The player is then refused with a 403. This is the real-world case the
+      // probe cannot catch: a `Range: bytes=0-0` request got 206, ExoPlayer's
+      // actual request did not.
+      subject.noteRefused(_track);
+
+      // The next extraction must mint a different URL rather than handing back
+      // the same gated one forever.
+      expect((await subject.extract(_track)).url.toString(), _sdklessUrl);
+    },
+  );
+
   test('retries with the next client when YouTube refuses the first', () async {
     final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
       YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
-      YoutubeApiClient.androidSdkless: _manifest(
-        <AudioOnlyStreamInfo>[_aacOnSdkless],
-      ),
+      YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+        _aacOnSdkless,
+      ]),
     });
     final probe = _ScriptedProbe(<String, StreamProbeResult>{
       _vrUrl: const StreamProbeRejected(403),
@@ -128,9 +179,9 @@ void main() {
   test('the client that worked is tried first next time', () async {
     final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
       YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
-      YoutubeApiClient.androidSdkless: _manifest(
-        <AudioOnlyStreamInfo>[_aacOnSdkless],
-      ),
+      YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+        _aacOnSdkless,
+      ]),
     });
     final probe = _ScriptedProbe(<String, StreamProbeResult>{
       _vrUrl: const StreamProbeRejected(403),
@@ -148,12 +199,7 @@ void main() {
   });
 
   test('prefers AAC over a higher-bitrate Opus rendition', () async {
-    final opus = _audio(
-      '$_vrUrl&itag=251',
-      251,
-      'opus',
-      160,
-    );
+    final opus = _audio('$_vrUrl&itag=251', 251, 'opus', 160);
     final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
       YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[
         opus,
@@ -174,9 +220,9 @@ void main() {
   test('reports every refusal when no client can serve the track', () async {
     final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
       YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
-      YoutubeApiClient.androidSdkless: _manifest(
-        <AudioOnlyStreamInfo>[_aacOnSdkless],
-      ),
+      YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+        _aacOnSdkless,
+      ]),
     });
     final probe = _ScriptedProbe(<String, StreamProbeResult>{
       _vrUrl: const StreamProbeRejected(403),
@@ -193,29 +239,32 @@ void main() {
     );
   });
 
-  test('a URL that never answers is a network failure, not a refusal', () async {
-    final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
-      YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
-      YoutubeApiClient.androidSdkless: _manifest(
-        <AudioOnlyStreamInfo>[_aacOnSdkless],
-      ),
-    });
-    final probe = _ScriptedProbe(<String, StreamProbeResult>{
-      _vrUrl: const StreamProbeUnreachable('timed out'),
-      _sdklessUrl: const StreamProbeUnreachable('timed out'),
-    });
+  test(
+    'a URL that never answers is a network failure, not a refusal',
+    () async {
+      final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
+        YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
+        YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+          _aacOnSdkless,
+        ]),
+      });
+      final probe = _ScriptedProbe(<String, StreamProbeResult>{
+        _vrUrl: const StreamProbeUnreachable('timed out'),
+        _sdklessUrl: const StreamProbeUnreachable('timed out'),
+      });
 
-    await expectLater(
-      extractor(probe, loader).extract(_track),
-      throwsA(isA<NetworkFailure>()),
-    );
-  });
+      await expectLater(
+        extractor(probe, loader).extract(_track),
+        throwsA(isA<NetworkFailure>()),
+      );
+    },
+  );
 
   test('a client that cannot even produce a manifest is skipped', () async {
     final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
-      YoutubeApiClient.androidSdkless: _manifest(
-        <AudioOnlyStreamInfo>[_aacOnSdkless],
-      ),
+      YoutubeApiClient.androidSdkless: _manifest(<AudioOnlyStreamInfo>[
+        _aacOnSdkless,
+      ]),
     });
     final probe = _ScriptedProbe(<String, StreamProbeResult>{
       _sdklessUrl: const StreamProbeOk(206),
@@ -224,5 +273,59 @@ void main() {
     final source = await extractor(probe, loader).extract(_track);
 
     expect(source.url.toString(), _sdklessUrl);
+  });
+
+  test('the default client list leads with tv, then vr, ios, sdkless', () {
+    expect(
+      YoutubeExtractor.defaultClients
+          .map((profile) => profile.label)
+          .toList(growable: false),
+      <String>['tv', 'android_vr', 'ios', 'android_sdkless'],
+    );
+  });
+
+  test(
+    'with the default clients, a gated tv falls through to android_vr',
+    () async {
+      final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{
+        YoutubeApiClient.tv: _manifest(<AudioOnlyStreamInfo>[_aacOnTv]),
+        YoutubeApiClient.androidVr: _manifest(<AudioOnlyStreamInfo>[_aacOnVr]),
+      });
+      final probe = _ScriptedProbe(<String, StreamProbeResult>{
+        _tvUrl: const StreamProbeRejected(403),
+        _vrUrl: const StreamProbeOk(206),
+      });
+
+      final source = await extractor(
+        probe,
+        loader,
+        clients: YoutubeExtractor.defaultClients,
+      ).extract(_track);
+
+      expect(source.url.toString(), _vrUrl);
+      expect(loader.clients, <YoutubeApiClient>[
+        YoutubeApiClient.tv,
+        YoutubeApiClient.androidVr,
+      ]);
+    },
+  );
+
+  test('noteRefused cycles through every default client', () {
+    final loader = _RecordingLoader(<YoutubeApiClient, StreamManifest>{});
+    final subject = extractor(
+      _ScriptedProbe(<String, StreamProbeResult>{}),
+      loader,
+      clients: YoutubeExtractor.defaultClients,
+    );
+
+    expect(subject.preferredClient.label, 'tv');
+    subject.noteRefused(_track);
+    expect(subject.preferredClient.label, 'android_vr');
+    subject.noteRefused(_track);
+    expect(subject.preferredClient.label, 'ios');
+    subject.noteRefused(_track);
+    expect(subject.preferredClient.label, 'android_sdkless');
+    subject.noteRefused(_track);
+    expect(subject.preferredClient.label, 'tv');
   });
 }

@@ -49,6 +49,13 @@ class PipedExtractor implements StreamExtractor {
   void rotateInstance() => _cursor++;
 
   @override
+  void noteRefused(Track track) {
+    // The player was refused a URL this instance had already verified, so move
+    // to the next mirror on the next extraction.
+    rotateInstance();
+  }
+
+  @override
   Future<PlaybackSource> extract(Track track) async {
     final base = currentInstance;
     final host = Uri.parse(base).host;

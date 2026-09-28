@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../core/config/app_config.dart';
-import '../features/player/presentation/mini_player.dart';
-import '../features/search/presentation/search_screen.dart';
+import 'routes.dart';
+import 'shell_screen.dart';
 
-/// Root widget: dark Material 3 theme, search as the home tab, and a
-/// persistent mini player.
+/// Root widget: dark Material 3 theme, 3-tab ShellScreen, persistent mini-player,
+/// and direct content deep-link routing.
 class TaroMusicApp extends StatelessWidget {
-  const TaroMusicApp({super.key});
+  const TaroMusicApp({super.key, this.initialRoute});
+
+  final String? initialRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -23,10 +25,9 @@ class TaroMusicApp extends StatelessWidget {
         scaffoldBackgroundColor: scheme.surface,
         listTileTheme: const ListTileThemeData(dense: true),
       ),
-      home: const Scaffold(
-        body: SafeArea(child: SearchScreen()),
-        bottomNavigationBar: MiniPlayer(),
-      ),
+      initialRoute: initialRoute,
+      onGenerateRoute: AppRoutes.onGenerateRoute,
+      home: const ShellScreen(),
     );
   }
 }

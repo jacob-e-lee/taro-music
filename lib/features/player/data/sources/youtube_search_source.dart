@@ -27,10 +27,19 @@ class YoutubeSearchSource implements SearchSource {
   String get label => 'YouTube';
 
   @override
-  Future<SearchResults> search(String query, {String? continuation}) async {
+  Future<SearchResults> search(
+    String query, {
+    String? continuation,
+    SearchScope filter = SearchScope.songs,
+  }) async {
     final VideoSearchList page;
     if (continuation == null) {
-      page = await _guard(() => _youtube.search.search(query));
+      page = await _guard(
+        () => _youtube.search.search(
+          _queryFor(query, filter),
+          filter: _spFilterFor(filter),
+        ),
+      );
     } else {
       final previous = _pages[continuation];
       if (previous == null) {
@@ -63,6 +72,19 @@ class YoutubeSearchSource implements SearchSource {
 
     return SearchResults(tracks: tracks, source: kind, continuation: token);
   }
+
+  /// Innertube has no "songs" type — its `sp` filter only distinguishes videos
+  /// from channels/playlists — so the music slice is expressed by biasing the
+  /// query instead, and the *video* slice is the one that uses a real `sp`
+  /// filter. Songs additionally drop live streams below.
+  static SearchFilter _spFilterFor(SearchScope filter) =>
+      filter == SearchScope.videos ? TypeFilters.video : const SearchFilter('');
+
+  /// YouTube's music search is the normal search with a music-leaning suffix.
+  /// `official audio` biases toward the audio upload rather than a music video,
+  /// which is what a listener actually wants from the "Songs" toggle.
+  static String _queryFor(String query, SearchScope filter) =>
+      filter == SearchScope.songs ? '$query official audio' : query;
 
   static Track? _trackFrom(Video video) {
     final id = video.id.value;

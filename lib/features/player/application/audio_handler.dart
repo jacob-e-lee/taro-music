@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
@@ -48,6 +49,23 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
   double _speed = 1.0;
   bool _handlingEndOfTrack = false;
 
+  /// Stream attempts used per track id for the track currently being started.
+  /// Shared by the synchronous load path and the asynchronous player-error
+  /// recovery so the two cannot drift or multiply their budgets.
+  final Map<String, int> _streamAttempts = <String, int>{};
+
+  /// Ids of tracks that reached ready+playing at least once. A source failure
+  /// after that point must surface instead of restarting the track from zero.
+  final Set<String> _startedTrackIds = <String>{};
+
+  /// Monotonic load token: stale async recoveries check this before acting so
+  /// a skip during recovery cannot restart the wrong track.
+  int _loadToken = 0;
+
+  /// Identity + intent of the load currently owned by [_loadToken].
+  String _trackIdAtLoad = '';
+  bool _autoplayAtLoad = true;
+
   AudioPlayer get player => _player;
 
   /// The player's own clocks: finer grained than [playbackState] (which only
@@ -56,7 +74,8 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
 
   Stream<Duration?> get durationStream => _player.durationStream;
 
-  Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
+  Stream<Duration> get bufferedPositionStream =>
+      _player.bufferedPositionStream;
 
   List<Track> get tracks => List<Track>.unmodifiable(_tracks);
 
@@ -80,6 +99,11 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
           processing: _mapProcessingState(state.processingState),
           playing: state.playing,
         );
+        if (state.processingState == ProcessingState.ready &&
+            state.playing &&
+            _trackIdAtLoad.isNotEmpty) {
+          _noteStarted(_trackIdAtLoad);
+        }
         if (state.processingState == ProcessingState.completed &&
             !_handlingEndOfTrack) {
           _handlingEndOfTrack = true;
@@ -103,13 +127,17 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
       }),
     );
 
-    // just_audio reports asynchronous player failures on this stream.
+    // The player's true failures arrive here, on its own clock: a 403 from
+    // ExoPlayer's background loader thread surfaces as an async playback
+    // event, never as an exception from `setUrl`. This is the recovery path
+    // for a stream that extracted (and even probed) fine but gets refused
+    // once playback actually begins.
     _subscriptions.add(
       _player.playbackEventStream.listen(
         (_) {},
-        onError: (Object error, StackTrace stackTrace) {
+        onError: (Object error, StackTrace stackTrace) async {
           debugPrint('just_audio error: $error');
-          _reportFailure(error);
+          await _recoverFromPlayerError(error);
         },
       ),
     );
@@ -139,6 +167,12 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
     }
     final safeIndex = startIndex.clamp(0, _tracks.length - 1);
     _orderPosition = _playOrder.indexOf(safeIndex);
+    // A fresh queue retires any in-flight load/recovery: the new tracks own
+    // new per-track state, and a late callback from the old queue must not act.
+    _loadToken++;
+    _trackIdAtLoad = '';
+    _streamAttempts.clear();
+    _startedTrackIds.clear();
     await _loadAt(_orderPosition, autoplay: autoplay);
   }
 
@@ -157,6 +191,40 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
   @override
   Future<void> addQueueItem(MediaItem mediaItem) =>
       addQueueItems(<MediaItem>[mediaItem]);
+
+  /// Moves track at [oldIndex] to [newIndex] in the visible queue and updates
+  /// queue state accordingly.
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _tracks.length) return;
+    var target = newIndex;
+    if (oldIndex < target) {
+      target -= 1;
+    }
+    if (target < 0 || target >= _tracks.length || target == oldIndex) return;
+
+    final movingTrack = _tracks.removeAt(oldIndex);
+    _tracks.insert(target, movingTrack);
+
+    // Remap values in _playOrder so they still point to their tracks.
+    _playOrder = <int>[
+      for (final value in _playOrder)
+        if (value == oldIndex)
+          target
+        else if (oldIndex < target && value > oldIndex && value <= target)
+          value - 1
+        else if (oldIndex > target && value >= target && value < oldIndex)
+          value + 1
+        else
+          value,
+    ];
+
+    await updateQueue(
+      _tracks.map((track) => track.toMediaItem()).toList(growable: false),
+    );
+    playbackState.add(
+      playbackState.value.copyWith(queueIndex: _currentQueueIndex),
+    );
+  }
 
   /// Removes the queue entry at [index] and keeps playback consistent.
   Future<void> removeTrackAt(int index) async {
@@ -346,8 +414,8 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
   }
 
   /// Resolves the stream for the track at playback-order slot [position] and
-  /// hands it to the player. This is the only place the audio side talks to the
-  /// repository.
+  /// hands it to the player. This is the only place the audio side talks to
+  /// the repository.
   Future<void> _loadAt(int position, {required bool autoplay}) async {
     if (position < 0 || position >= _playOrder.length) return;
     final index = _playOrder[position];
@@ -366,33 +434,166 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
       ),
     );
 
+    // A new load owns a new token: any in-flight async recovery for the
+    // previous load is stale and must bail when it notices.
+    _loadToken++;
+    _trackIdAtLoad = track.id;
+    _autoplayAtLoad = autoplay;
+    _streamAttempts[track.id] = 0;
+
+    if (!await _startSource(track: track, autoplay: autoplay)) {
+      return;
+    }
+  }
+
+  /// Shared start path for the synchronous load and the asynchronous player
+  /// error recovery: resolve fresh sources and feed them to the player until
+  /// one sticks or [maxStreamAttempts] is used up. Returns false when every
+  /// attempt failed, in which case the failure is already reported.
+  ///
+  /// The current token is captured up front; when it no longer matches on the
+  /// way out, a newer load has taken over and the result is discarded.
+  Future<bool> _startSource({
+    required Track track,
+    required bool autoplay,
+  }) async {
+    final token = _loadToken;
+    final attempts = (_streamAttempts[track.id] ?? 0) + 1;
+    _streamAttempts[track.id] = attempts;
+
     final PlaybackSource source;
     try {
       source = await _repository.resolveSource(track);
     } catch (error) {
-      debugPrint('Stream resolution failed for ${track.id}: $error');
-      _reportFailure(error, track: track);
-      return;
+      // Resolution itself failed; the chain has already exhausted its own
+      // sources, so there is nothing left to rotate.
+      if (token == _loadToken) {
+        debugPrint('Stream resolution failed for ${track.id}: $error');
+        _reportFailure(error, track: track);
+      }
+      return false;
     }
+    if (token != _loadToken) return false;
 
-    debugPrint('Playing ${track.id} via $source');
+    debugPrint(
+      'Playing ${track.id} via $source (attempt $attempts/$maxStreamAttempts)',
+    );
     try {
       await _player.setUrl(
         source.url.toString(),
         headers: source.headers.isEmpty ? null : source.headers,
       );
     } catch (error) {
-      debugPrint('Player rejected ${source.url}: $error');
-      _reportFailure(error, track: track);
-      return;
+      // A *synchronous* refusal: the player rejected the URL before returning
+      // (wrong scheme, unparsable URI). Async refusals - the ExoPlayer 403 -
+      // arrive through `playbackEventStream` and hit [_recoverFromPlayerError].
+      return _reportSyncRefusal(track, source, error, token);
     }
+    if (token != _loadToken) return false;
 
     if (autoplay) {
       await _player.play();
     } else {
       await _player.pause();
     }
+    return true;
   }
+
+  /// Handles a refusal raised synchronously by `setUrl`. Rotates the source
+  /// and retries while budget remains.
+  Future<bool> _reportSyncRefusal(
+    Track track,
+    PlaybackSource source,
+    Object error,
+    int token,
+  ) async {
+    // YouTube gates its stream URLs per client, so a probe that got 206 says
+    // nothing about whether the player will be let in.
+    final attempts = _streamAttempts[track.id] ?? 1;
+    debugPrint(
+      'Player rejected ${source.url} (attempt $attempts/$maxStreamAttempts): '
+      '$error',
+    );
+    if (attempts >= maxStreamAttempts || token != _loadToken) {
+      if (token == _loadToken) {
+        _reportFailure(error, track: track);
+      }
+      return false;
+    }
+    _repository.noteRefused(track);
+    return _startSource(track: track, autoplay: _autoplayAtLoad);
+  }
+
+  /// Handles a failure raised asynchronously through `playbackEventStream` -
+  /// the ExoPlayer background-thread 403. Same budget and rotation as the sync
+  /// path, keyed on the same per-track attempt counter.
+  void _noteStarted(String trackId) {
+    if (trackId.isNotEmpty) {
+      _startedTrackIds.add(trackId);
+    }
+  }
+
+  /// Drives [_noteStarted] for tests that cannot push a real ready+playing
+  /// `PlayerState` through the fake player.
+  @visibleForTesting
+  void markTrackStartedForTest(String trackId) => _noteStarted(trackId);
+
+  @visibleForTesting
+  Future<void> recoverFromPlayerErrorForTest(Object error) =>
+      _recoverFromPlayerError(error);
+
+  Future<void> _recoverFromPlayerError(Object error) async {
+    final track = currentTrack;
+    if (track == null || track.id != _trackIdAtLoad) return;
+    if (!_isSourceFailure(error)) {
+      _reportFailure(error, track: track);
+      return;
+    }
+    if (_startedTrackIds.contains(track.id)) {
+      // Mid-track failure: re-resolving would restart the track from zero.
+      _reportFailure(error, track: track);
+      return;
+    }
+    // The budget counts *streams handed to the player*, and `_startSource`
+    // bumps the counter each time it runs: the initial load already used
+    // attempt 1, so recovery may top up to the budget but never past it.
+    final used = _streamAttempts[track.id] ?? 0;
+    if (used >= maxStreamAttempts) {
+      debugPrint(
+        'Player refused ${track.id} $used times; giving up: $error',
+      );
+      _reportFailure(error, track: track);
+      return;
+    }
+    final token = _loadToken;
+    debugPrint(
+      'Recovering ${track.id} after async refusal '
+      '(attempt ${used + 1}/$maxStreamAttempts): $error',
+    );
+    _repository.noteRefused(track);
+    await _startSource(track: track, autoplay: _autoplayAtLoad);
+    if (token != _loadToken) return;
+  }
+
+  /// True for the failures a fresh stream can fix: just_audio wraps
+  /// ExoPlayer's refusal (HTTP status included) in a `PlayerException`, and a
+  /// dropped connection mid-resolve surfaces as an [IOException].
+  @visibleForTesting
+  static bool isSourceFailureForTest(Object error) => _isSourceFailure(error);
+
+  static bool _isSourceFailure(Object error) {
+    if (error is PlayerException) return true;
+    if (error is IOException) return true;
+    final text = error.toString();
+    return text.contains('Source error') ||
+        text.contains('InvalidResponseCodeException') ||
+        text.contains('Response code:');
+  }
+
+  /// How many times to resolve a fresh stream when the player refuses the
+  /// last one. More than one because a single rotation can land on another
+  /// gated client; small because each attempt costs a manifest lookup.
+  static const int maxStreamAttempts = 3;
 
   void _reportFailure(Object error, {Track? track}) {
     final message = switch (error) {
@@ -441,7 +642,6 @@ class MusicAudioHandler extends BaseAudioHandler with QueueHandler {
     MediaControl.skipToPrevious,
     playing ? MediaControl.pause : MediaControl.play,
     MediaControl.skipToNext,
-    MediaControl.stop,
   ];
 
   /// just_audio's `completed` is folded into [AudioProcessingState.ready]: the

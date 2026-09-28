@@ -20,6 +20,7 @@ class Track {
     this.album,
     this.viewCount,
     this.isLive = false,
+    this.isDownloaded = false,
   });
 
   /// Stable identity: the YouTube `videoId`, which is common to every source,
@@ -38,6 +39,7 @@ class Track {
   final String? artworkUrl;
   final int? viewCount;
   final bool isLive;
+  final bool isDownloaded;
 
   /// Which provider surfaced this track. Used as a *hint*: it is the preferred
   /// extractor for this item, but a failure still falls through to the others.
@@ -58,6 +60,7 @@ class Track {
     String? artworkUrl,
     int? viewCount,
     bool? isLive,
+    bool? isDownloaded,
     MediaSourceKind? source,
   }) => Track(
     id: id,
@@ -68,6 +71,7 @@ class Track {
     artworkUrl: artworkUrl ?? this.artworkUrl,
     viewCount: viewCount ?? this.viewCount,
     isLive: isLive ?? this.isLive,
+    isDownloaded: isDownloaded ?? this.isDownloaded,
     source: source ?? this.source,
   );
 
@@ -83,6 +87,7 @@ class Track {
     if (artworkUrl != null) 'artworkUrl': artworkUrl,
     if (viewCount != null) 'viewCount': viewCount,
     'isLive': isLive,
+    'isDownloaded': isDownloaded,
     'source': source.name,
   };
 
@@ -100,6 +105,7 @@ class Track {
       artworkUrl: extras['artworkUrl'] as String?,
       viewCount: extras['viewCount'] as int?,
       isLive: (extras['isLive'] as bool?) ?? false,
+      isDownloaded: (extras['isDownloaded'] as bool?) ?? false,
       source: MediaSourceKind.values.firstWhere(
         (s) => s.name == sourceName,
         orElse: () => MediaSourceKind.youtube,
@@ -119,6 +125,7 @@ class Track {
           other.artworkUrl == artworkUrl &&
           other.viewCount == viewCount &&
           other.isLive == isLive &&
+          other.isDownloaded == isDownloaded &&
           other.source == source;
 
   @override
@@ -131,6 +138,7 @@ class Track {
     artworkUrl,
     viewCount,
     isLive,
+    isDownloaded,
     source,
   );
 

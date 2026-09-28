@@ -25,4 +25,14 @@ abstract interface class StreamExtractor {
   /// nothing playable (permanent for this source), or [NetworkFailure] /
   /// [ExtractionFailure] when the call itself went wrong (worth retrying).
   Future<PlaybackSource> extract(Track track);
+
+  /// Called when the *player* refused a URL this extractor had already
+  /// verified, so the next [extract] should try a different rendition.
+  ///
+  /// This exists because a successful probe is not proof of playability: a
+  /// `Range: bytes=0-0` request can come back 206 while the player's real
+  /// request is refused with a 403 (YouTube's URL gating is the common case).
+  /// Without this hook a refused URL is served again forever, because from the
+  /// extractor's point of view nothing ever failed.
+  void noteRefused(Track track) {}
 }

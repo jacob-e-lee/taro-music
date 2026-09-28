@@ -1,6 +1,25 @@
 import '../../../core/errors/failures.dart';
 import 'track.dart';
 
+/// Which kind of result the user is searching for.
+///
+/// This is a *presentation* choice, not a different source: both variants hit
+/// the same providers, but the providers are asked for a different slice
+/// (YouTube's `sp` type filter, Piped's `filter` param), so it is threaded all
+/// the way down to [SearchSource] rather than being filtered client-side.
+enum SearchScope {
+  songs('Songs', 'music_songs'),
+  videos('Videos', 'music_videos');
+
+  const SearchScope(this.label, this.pipedValue);
+
+  /// Text shown on the toggle.
+  final String label;
+
+  /// The value Piped's `/search` endpoint expects in its `filter` param.
+  final String pipedValue;
+}
+
 /// One page of search results plus the cursor needed to fetch the next one.
 ///
 /// [continuation] is an *opaque, source-tagged* token (`yt:`/`piped:` prefix).
