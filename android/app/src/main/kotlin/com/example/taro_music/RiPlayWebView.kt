@@ -234,8 +234,23 @@ class RiPlayWebView(
                     }
                   };
 
+                  // The second argument of both calls is `startSeconds`, NOT an
+                  // autoplay flag. `autoplay ? 1 : 0` therefore asked the player
+                  // to begin one second in, which is why every track used to
+                  // lose its first second while the flag itself did nothing at
+                  // all - `loadVideoById` always starts playing.
+                  //
+                  // Zero is unambiguous here: nothing in the app resumes at an
+                  // offset. Re-selecting the current track is already a no-op
+                  // (`YouTubeWebViewBridge.loadVideo` guards on the loaded id)
+                  // and repeat-one seeks rather than reloads. The two calls are
+                  // what carry the intent instead: `loadVideoById` plays,
+                  // `cueVideoById` waits for `playVideo()`.
                   window.taroLoad = function (videoId, autoplay) {
-                    window.taro.call('loadVideoById', [videoId, autoplay ? 1 : 0]);
+                    window.taro.call(
+                      autoplay ? 'loadVideoById' : 'cueVideoById',
+                      [videoId, 0]
+                    );
                   };
 
                   function onYouTubeIframeAPIReady() {
