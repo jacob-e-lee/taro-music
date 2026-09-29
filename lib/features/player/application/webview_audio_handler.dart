@@ -244,9 +244,13 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
       if (track != null) _tracks.add(track);
     }
     _rebuildOrder();
+    // Before publishing, not after: the position is part of what gets
+    // published, and leaving it at the `-1` it starts on meant the very first
+    // queue was published with no row marked as playing. It then only got
+    // corrected by whichever call moved the position afterwards.
+    if (wasEmpty && _tracks.isNotEmpty) _orderPosition = 0;
     await _publishQueue();
     if (wasEmpty && _tracks.isNotEmpty) {
-      _orderPosition = 0;
       await _startCurrent(autoplay: true);
     }
   }
@@ -268,6 +272,12 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
         0,
         _playOrder.isEmpty ? 0 : _playOrder.length - 1,
       );
+    } else if (visibleIndex < _orderPosition) {
+      // Removing something *above* the playing track shifts everything below it
+      // up a slot, so the position has to come down with it. Without this the
+      // index was left pointing past the end of the shorter list, and the
+      // queue showed no current row at all.
+      _orderPosition -= 1;
     }
     await _publishQueue();
 
@@ -293,11 +303,28 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
     if (oldIndex == newIndex) return;
 
     final wasCurrent = oldIndex == _orderPosition;
+    // Which *track* is playing, captured before the list is disturbed. The
+    // position alone is not enough to put it back afterwards, because the move
+    // relocates whichever rows sat between the two indices - including the
+    // playing one, if the user dropped a different track onto it.
+    final playingTrack = _currentQueueIndex;
+
     final moved = _playOrder.removeAt(oldIndex);
     _playOrder.insert(newIndex, moved);
-    _orderPosition = newIndex;
+    // Re-derive the position from the track rather than adopting `newIndex`.
+    // Setting it to the drop slot made the highlight follow the *slot*, so
+    // dragging any other track onto the currently playing row made the app look
+    // like it had switched songs - while playback, quite correctly, carried on
+    // with the same track. Reordering is a change to the queue, not a play
+    // command, so the playing track must survive it unchanged.
+    _orderPosition = playingTrack == null
+        ? newIndex
+        : _playOrder.indexOf(playingTrack);
     await _publishQueue();
 
+    // Restart only when the track that was playing is itself the one that
+    // moved. Otherwise playback is untouched and the engine does not need to
+    // be told anything at all.
     if (wasCurrent) await _startCurrent(autoplay: true);
   }
 
@@ -393,7 +420,28 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
     if (index != null && index < _tracks.length) {
       mediaItem.add(_tracks[index].toMediaItem());
     }
+    // The queue's own highlight rides on the *visible* position, not on
+    // `_currentQueueIndex`: the latter is an index into `_tracks` (an index
+    // into `_playOrder`, once shuffled or reordered), while the list the user
+    // is looking at is indexed by play order. They coincide only while the
+    // order is the identity permutation, which is exactly why a shuffled or
+    // reordered queue used to highlight the wrong row.
+    //
+    // This has to be written here, once, rather than in each of the dozen
+    // places that move `_orderPosition`: they all already call this, so
+    // `skipToNext`, `skipToPrevious`, `skipToQueueItem`, reordering, removal
+    // and `playMediaItem` cannot drift apart.
+    //
+    // A `_orderPosition` of `-1` is the handler's "nothing is playing", but the
+    // platform wants a `null` index there rather than a negative one it could
+    // index a list with — hence the sentinel instead of passing the value
+    // straight through.
+    _publish(queueIndex: _orderPosition < 0 ? _noQueueIndex : _orderPosition);
   }
+
+  /// `_publish`'s way of saying "clear the current index", which has to be
+  /// distinguishable from "leave the index alone" (a `null` `queueIndex`).
+  static const int _noQueueIndex = -1;
 
   // ------------------------------------------------------------- transport
 
@@ -545,12 +593,16 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
     Duration? playbackPosition,
     double? speed,
     List<MediaControl>? controls,
+    int? queueIndex,
   }) {
     final current = playbackState.value;
     playbackState.add(
       current.copyWith(
         processingState: processing ?? current.processingState,
         playing: playing ?? current.playing,
+        queueIndex: queueIndex == null
+            ? current.queueIndex
+            : (queueIndex == _noQueueIndex ? null : queueIndex),
         // `current.position`, not `current.updatePosition`: the latter is the
         // raw snapshot the last publish happened to carry, while the former is
         // that snapshot *plus* the wall clock since `updateTime`, which is the

@@ -24,14 +24,18 @@ would otherwise pause audio the moment the screen locks.
 - **Background playback** with a media notification, lock-screen controls, and
   headset-button support via `audio_service`.
 - **Full queue model** — shuffle, repeat one/all, skip next/previous, seek,
-  playback speed, and drag-to-reorder "Up Next".
+  playback speed, and drag-to-reorder "Up Next". The whole row is a long-press
+  drag target and the handle starts a drag immediately, with a short haptic tick
+  on lift.
 - **Now-playing sheet** that morphs continuously from the mini-player band into
   the full player with one drag gesture; the seek bar re-reads the engine clock
   once per display frame, so motion is smooth without polling the WebView.
 - **Queue and Lyrics tabs** in the full player — tapping one opens that
-  panel, and swiping down anywhere in a panel once you are back at the top
-  of its scroll closes it again (the lyrics source is not implemented yet,
-  so the lyrics panel currently renders an empty state).
+  panel, and swiping sideways pages between the two. Swiping down anywhere in
+  a panel once you are back at the top of its scroll closes it again. The
+  surface squares off its top corners as the panel comes up, so the panel reads
+  as the player continuing rather than as a card floating over it (the lyrics
+  source is not implemented yet, so the lyrics panel renders an empty state).
 - **Deep links** — `/track` and `/playlist` routes open shared content directly.
 - Exponential-backoff retries across every provider, with per-attempt failures
   preserved so the UI can say exactly what was tried.
@@ -70,6 +74,13 @@ lib/
 1. The UI talks only to `WebViewAudioHandler` (an `audio_service`
    `BaseAudioHandler`) — queue, play/pause/seek/skip/shuffle/repeat. It is the
    single source of truth for playback state.
+   The current track is held as a *visible position* into the play order, and
+   every path that can move it — `skipToNext`, `skipToPrevious`,
+   `skipToQueueItem`, reordering, removal, `playMediaItem` — publishes it
+   through one method, so the "now playing" row in the queue cannot drift from
+   the track actually playing. Note this is deliberately the position in the
+   play order and not an index into the track list: the two agree only while the
+   order is unchanged, which is exactly when a bug in this area hides.
 2. The handler owns no WebView. The engine is `YoutubeWebviewPlayer`, a 1×1
    invisible widget mounted above the navigator, which hosts the Android
    platform view `RiPlayWebView`.

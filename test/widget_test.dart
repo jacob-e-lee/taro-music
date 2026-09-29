@@ -1,5 +1,7 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -76,6 +78,73 @@ Future<void> _openPlayer(WidgetTester tester) async {
   await _openOn(tester);
 }
 
+/// The titles of the queue rows currently built, in the order they appear.
+///
+/// Only the rows the sliver has actually built - a [SliverReorderableList]
+/// builds lazily, so this is the visible window rather than the whole queue.
+/// That is enough to tell a reorder happened, and it avoids depending on rows
+/// that may not exist.
+List<String> _visibleQueueTitles(WidgetTester tester) => tester
+    .widgetList<ListTile>(
+      find.descendant(
+        of: find.byType(QueueTab),
+        matching: find.byType(ListTile),
+      ),
+    )
+    .map((tile) => (tile.title! as Text).data!)
+    .toList();
+
+/// The handler's whole queue, as titles, in play order.
+///
+/// The counterpart to [_visibleQueueTitles] for the cases where a scroll would
+/// change the visible window and make a before/after comparison meaningless.
+List<String> _queueTitles(WebViewAudioHandler handler) =>
+    handler.queue.value.map((item) => item.title).toList();
+
+/// The drag handle of the first queue row.
+///
+/// Scoped to the queue because the shell's own icons share the same widget type,
+/// and scoped to the icon *by its ancestor* because the queue's rows also carry
+/// artwork fallbacks and an offline pin.
+Finder _firstQueueHandle() => find
+    .descendant(
+      of: find.byType(QueueTab),
+      matching: find.byIcon(Icons.drag_handle),
+    )
+    .first;
+
+/// A point inside the first queue row, well clear of the drag handle.
+///
+/// Aiming at the handle by accident would test the handle's gesture rather than
+/// the row's, which is the whole point of the row-level test.
+Offset _firstQueueRowPoint(WidgetTester tester) {
+  final tiles = find.descendant(
+    of: find.byType(QueueTab),
+    matching: find.byType(ListTile),
+  );
+  final box = tester.getRect(tiles.first);
+  return Offset(box.left + box.width * 0.6, box.center.dy);
+}
+
+/// The title of the queue row currently marked as playing.
+///
+/// Read off the rendered [ListTile.selected] rather than off
+/// `PlaybackState.queueIndex`, so the test fails if the state is published but
+/// the list fails to reflect it — the two drifting apart is the bug this whole
+/// area had.
+String? _selectedQueueTitle(WidgetTester tester) {
+  final selected = tester
+      .widgetList<ListTile>(
+        find.descendant(
+          of: find.byType(QueueTab),
+          matching: find.byType(ListTile),
+        ),
+      )
+      .where((tile) => tile.selected);
+  if (selected.isEmpty) throw StateError('no queue row is marked as playing');
+  return (selected.first.title! as Text).data;
+}
+
 /// Drags the tab bar upwards to reach the peek state.
 Future<void> _peek(WidgetTester tester) async {
   final gesture = await tester.startGesture(
@@ -99,6 +168,34 @@ Future<void> _peek(WidgetTester tester) async {
 }
 
 WebViewAudioHandler _handler() => WebViewAudioHandler();
+
+/// The surface fill's top corner radius, in logical pixels.
+///
+/// Read off the rendered decoration rather than recomputed from `morph`, so
+/// the test fails if the radius stops being driven by the morph even if the
+/// arithmetic itself is still there.
+double _surfaceTopRadius(WidgetTester tester) {
+  final decoration = tester
+      .widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byType(NowPlayingSheet),
+          matching: find.byType(DecoratedBox),
+        ),
+      )
+      .map((box) => box.decoration)
+      .whereType<BoxDecoration>()
+      .firstWhere((d) => d.borderRadius != null);
+  // `BoxDecoration.borderRadius` is typed as the wider `BorderRadiusGeometry`;
+  // the surface always builds a `BorderRadius`, and only that one exposes the
+  // corners.
+  final border = decoration.borderRadius! as BorderRadius;
+  final radius = border.topLeft;
+  assert(
+    radius.x == radius.y,
+    'the surface is clipped by a circular radius, not an elliptical one',
+  );
+  return radius.x;
+}
 
 /// Feeds the bridge an event as the native side would.
 ///
@@ -352,10 +449,7 @@ void main() {
     // hangs off - moved up 100px too. The old mapping divided by a fixed 0.35
     // of the screen height while the bar's real travel is closer to 0.75 of
     // it, so this delta used to run roughly twice as far as the finger.
-    expect(
-      barTop - tester.getTopLeft(find.text('Queue')).dy,
-      closeTo(100, 2),
-    );
+    expect(barTop - tester.getTopLeft(find.text('Queue')).dy, closeTo(100, 2));
 
     // Keep pulling until the whole travel is covered, then release: past the
     // settle fraction, so it commits to the peek state.
@@ -529,6 +623,526 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_playerHeight(tester), closeTo(openHeight, 1));
+  });
+
+  group('queue highlight', () {
+    testWidgets('starts on the first track once something is queued', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      expect(_selectedQueueTitle(tester), 'Test Song');
+    });
+
+    testWidgets('tapping a row moves the highlight to it', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+      expect(_selectedQueueTitle(tester), 'Test Song');
+
+      // Direct selection, not a transport command: this is the path a tap on
+      // the queue takes.
+      await tester.tap(find.text('Second'));
+      await tester.pumpAndSettle();
+
+      expect(_selectedQueueTitle(tester), 'Second');
+    });
+
+    testWidgets('skipping forward and back moves the highlight', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      // Not driven through the UI: the transport buttons are the other
+      // caller of these, and they go through the same publication path, so
+      // exercising the handler directly isolates what it publishes.
+      await _lastHandler!.skipToNext();
+      await tester.pumpAndSettle();
+      expect(_selectedQueueTitle(tester), 'Second');
+
+      await _lastHandler!.skipToQueueItem(0);
+      await tester.pumpAndSettle();
+      expect(_selectedQueueTitle(tester), 'Test Song');
+    });
+
+    testWidgets('a reordered queue keeps the highlight on the right track', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      // Playing the *second* track, then moving it to the top. The highlight
+      // has to follow the track, not the slot it started in — the distinction
+      // between the visible position and the underlying track index.
+      await _lastHandler!.skipToQueueItem(1);
+      await tester.pumpAndSettle();
+      expect(_selectedQueueTitle(tester), 'Second');
+
+      await _lastHandler!.reorderQueue(1, 0);
+      await tester.pumpAndSettle();
+
+      expect(_selectedQueueTitle(tester), 'Second');
+    });
+
+    testWidgets('removing the track above moves the highlight up', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      await _lastHandler!.skipToQueueItem(1);
+      await tester.pumpAndSettle();
+      expect(_selectedQueueTitle(tester), 'Second');
+
+      // Dropping the row above the current one shifts everything down a slot.
+      // A stale index would now point at the removed track or off the end.
+      await _lastHandler!.removeTrackAt(0);
+      await tester.pumpAndSettle();
+
+      expect(_selectedQueueTitle(tester), 'Second');
+    });
+  });
+
+  group('panel corners', () {
+    testWidgets('the open panel squares the surface off', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+
+      // The full player keeps its rounded corners: it is a card sitting above
+      // the app, and the rounding is what says so.
+      final playerRadius = _surfaceTopRadius(tester);
+      expect(playerRadius, greaterThan(8));
+
+      // Pulling the panel up takes the player to a full-height surface, and
+      // the radius is driven by the morph, not by how open the surface is - so
+      // the corners are gone once the panel is all the way up.
+      await _peek(tester);
+      expect(find.textContaining('Up Next'), findsOneWidget);
+      expect(_surfaceTopRadius(tester), lessThan(0.5));
+    });
+
+    testWidgets('the corners unwind rather than snapping at the top', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Queue')),
+      );
+      await tester.pump();
+
+      // Part way through the pull the corners are part way gone, not all of
+      // them: the radius interpolates with the morph rather than switching.
+      await gesture.moveBy(const Offset(0, -60));
+      await tester.pump();
+      final midPull = _surfaceTopRadius(tester);
+      expect(midPull, greaterThan(0));
+      expect(midPull, lessThan(_surfaceTopRadius(tester) + 0.5));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+  });
+
+  group('panel paging', () {
+    /// A horizontal swipe across the panel body, in small steps with a frame
+    /// between them the way a real finger moves.
+    ///
+    /// Two things it has to get right, both of which made an earlier version of
+    /// this helper silently do nothing:
+    ///
+    ///  * It cannot be a single [WidgetTester.drag]. That sends one move event
+    ///    and lifts, and a pager settles onto the next page from a gesture that
+    ///    has travelled past its slop over several frames.
+    ///  * It has to cross the snap threshold, which is half the page width. A
+    ///    300px drag on an 800px page is well under it, so the pager springs
+    ///    back to where it started - correct behaviour, and indistinguishable
+    ///    from a pager that ignored the gesture. The distance is therefore
+    ///    taken from the rendered pager rather than hard-coded.
+    ///
+    /// Measured and touched on the [PageView] rather than on a page: only the
+    /// page currently on screen is built, so measuring `QueueTab` works from
+    /// the queue and throws from the lyrics page.
+    ///
+    /// Scoped to the player sheet because the shell has a [PageView] of its own
+    /// for the top-level tabs, and an unscoped finder matches both.
+    Future<void> swipePanel(WidgetTester tester, double direction) async {
+      final pager = find.descendant(
+        of: find.byType(NowPlayingSheet),
+        matching: find.byType(PageView),
+      );
+      final gesture = await tester.startGesture(tester.getCenter(pager));
+      await tester.pump();
+      const steps = 10;
+      final dx = direction * tester.getSize(pager).width * 0.8;
+      for (var i = 0; i < steps; i++) {
+        await gesture.moveBy(Offset(dx / steps, 0));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('swiping sideways moves between Queue and Lyrics', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+      expect(find.textContaining('Up Next'), findsOneWidget);
+
+      // Leftwards, to the next page.
+      await swipePanel(tester, -1);
+
+      expect(find.textContaining('Up Next'), findsNothing);
+      expect(find.text('Lyrics unavailable'), findsOneWidget);
+    });
+
+    testWidgets('swiping back returns to the queue', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      await tester.tap(find.text('Lyrics'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lyrics unavailable'), findsOneWidget);
+
+      // Rightwards, to the previous page. The pager is two-way, not just a
+      // one-way reveal.
+      await swipePanel(tester, 1);
+
+      expect(find.textContaining('Up Next'), findsOneWidget);
+    });
+
+    testWidgets('a swipe moves the tab highlight too', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      // The tab and the visible page are two views of one thing; a swipe that
+      // moved the page but not the selected tab would leave the buttons
+      // lighting up the panel the user just left.
+      Color? labelColourOf(String label) {
+        final text = tester.widget<Text>(find.text(label));
+        return text.style?.color;
+      }
+
+      final queueBefore = labelColourOf('Queue');
+      await swipePanel(tester, -1);
+
+      expect(labelColourOf('Lyrics'), queueBefore);
+      expect(labelColourOf('Queue'), isNot(queueBefore));
+    });
+
+    testWidgets('a sideways swipe does not close the panel', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+      final openHeight = _playerHeight(tester);
+
+      // The pager is itself a scroll view reporting to the panel's own scroll
+      // listener. If its under-scroll were taken for the panel's, dragging
+      // sideways would pull the morph - and drag the player closed - instead
+      // of changing page.
+      await swipePanel(tester, -1);
+
+      expect(find.text('Lyrics unavailable'), findsOneWidget);
+      expect(_playerHeight(tester), closeTo(openHeight, 1));
+    });
+  });
+
+  group('reorder', () {
+    /// Long-presses a row's handle and drags it down by [dy] logical pixels.
+    ///
+    /// The long press is pumped rather than awaited because the drag start is
+    /// on a timer: pumping past `kLongPressTimeout` is what trips it.
+    Future<void> dragRowBy(
+      WidgetTester tester,
+      Finder handle,
+      double dy,
+    ) async {
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      const steps = 10;
+      for (var i = 0; i < steps; i++) {
+        await gesture.moveBy(Offset(0, dy / steps));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    /// 30 tracks in the queue, which is what a reorder test needs to move one
+    /// without running out of list.
+    ///
+    /// The queue is [Test Song, Second] followed by `Queue Track 0..29`, so
+    /// the names here are deliberately distinct - a test that asserts on track
+    /// names has to know exactly which one it is talking about.
+    Future<void> loadManyQueued(WidgetTester tester) async {
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+      await _lastHandler!.addQueueItems(
+        List<MediaItem>.generate(
+          30,
+          (i) => MediaItem(id: 'q$i', title: 'Queue Track $i'),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a long-press drag reorders the queue', (
+      WidgetTester tester,
+    ) async {
+      await loadManyQueued(tester);
+
+      final before = _visibleQueueTitles(tester);
+      expect(before.first, 'Test Song');
+
+      await dragRowBy(tester, find.byIcon(Icons.drag_handle).first, 100);
+
+      // The real assertion: the list actually changed order, and the track that
+      // was first is no longer first. "It stopped throwing" is not the same as
+      // "it works", and only this one tells the two apart.
+      final after = _visibleQueueTitles(tester);
+      expect(after, isNot(equals(before)));
+      expect(after.first, isNot('Test Song'));
+    });
+
+    testWidgets('dragging a row does not throw', (WidgetTester tester) async {
+      await loadManyQueued(tester);
+
+      // The row is lifted into the navigator's overlay while dragging, which
+      // takes it out of the player's own Material. The row's ListTile needs one
+      // to paint its ink on, so this throws "No Material widget found" the
+      // moment the drag starts unless the proxy supplies it.
+      await dragRowBy(tester, find.byIcon(Icons.drag_handle).first, 100);
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('starting a drag fires a haptic tick', (
+      WidgetTester tester,
+    ) async {
+      await loadManyQueued(tester);
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            calls.add(call);
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await dragRowBy(tester, find.byIcon(Icons.drag_handle).first, 100);
+
+      // The confirmation that the long press was accepted and the row is now
+      // being carried. Without it the whole gesture is silent, so a hold that
+      // was a shade too short looks identical to one that took.
+      expect(
+        calls.where((c) => c.method == 'HapticFeedback.vibrate').length +
+            calls
+                .where((c) => c.method == 'HapticFeedback.selectionClick')
+                .length,
+        greaterThan(0),
+      );
+    });
+
+    testWidgets('the haptic fires once, at the start of the drag', (
+      WidgetTester tester,
+    ) async {
+      await loadManyQueued(tester);
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            calls.add(call);
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await dragRowBy(tester, find.byIcon(Icons.drag_handle).first, 100);
+
+      final ticks = calls
+          .where(
+            (c) =>
+                c.method == 'HapticFeedback.selectionClick' ||
+                c.method == 'HapticFeedback.vibrate',
+          )
+          .length;
+      // A tick per drag *start*, not per row the pointer passes over: a
+      // buzz on every crossing is a rattle, and the delay is the confirmation.
+      expect(ticks, 1);
+    });
+
+    testWidgets('a plain tap on a row still plays it', (
+      WidgetTester tester,
+    ) async {
+      // The handle is a long-press, so the tile's own tap has to survive it:
+      // an immediate drag handle here would make the row untappable.
+      await tester.pumpWidget(_playerApp());
+      await _openOn(tester);
+      await _peek(tester);
+
+      expect(_selectedQueueTitle(tester), 'Test Song');
+      await tester.tap(find.text('Second'));
+      await tester.pumpAndSettle();
+      expect(_selectedQueueTitle(tester), 'Second');
+    });
+
+    testWidgets('dragging onto the playing row does not change the song', (
+      WidgetTester tester,
+    ) async {
+      // The reported bug: a *different* track dropped onto the currently
+      // playing row made the highlight jump to that track, so the queue looked
+      // like it had switched songs - while playback carried on with the
+      // original. Reordering is not a play command.
+      await loadManyQueued(tester);
+      await _lastHandler!.skipToQueueItem(1);
+      await tester.pumpAndSettle();
+      final playing = _selectedQueueTitle(tester);
+      expect(playing, 'Second');
+
+      // Drop row 0 onto row 1, i.e. onto the slot the playing track occupies.
+      await _lastHandler!.reorderQueue(0, 2);
+      await tester.pumpAndSettle();
+
+      expect(_selectedQueueTitle(tester), playing);
+    });
+
+    testWidgets('reordering does not switch the playing track', (
+      WidgetTester tester,
+    ) async {
+      // The visible highlight is only half of it: the handler's own idea of the
+      // current track has to be right too, or the next skip or the media
+      // notification would be built from the wrong song.
+      await loadManyQueued(tester);
+      await _lastHandler!.skipToQueueItem(1);
+      await tester.pumpAndSettle();
+
+      final handler = _lastHandler!;
+      expect(handler.currentTrack?.title, 'Second');
+      final beforeId = handler.currentTrack?.id;
+
+      await handler.reorderQueue(0, 2);
+      await tester.pumpAndSettle();
+
+      expect(handler.currentTrack?.id, beforeId);
+      expect(handler.currentTrack?.title, 'Second');
+    });
+
+    testWidgets('moving the playing row keeps it playing', (
+      WidgetTester tester,
+    ) async {
+      // The other half of the same fix: dragging the *playing* row itself must
+      // still follow the track, not the old slot.
+      await loadManyQueued(tester);
+      await _lastHandler!.skipToQueueItem(1);
+      await tester.pumpAndSettle();
+
+      await _lastHandler!.reorderQueue(1, 5);
+      await tester.pumpAndSettle();
+
+      expect(_selectedQueueTitle(tester), 'Second');
+    });
+
+    testWidgets('the whole row is a long-press drag target', (
+      WidgetTester tester,
+    ) async {
+      await loadManyQueued(tester);
+      final before = _visibleQueueTitles(tester);
+
+      // Long-press the row's title text, well away from the drag handle, and
+      // drag. Only works if the row itself carries the listener.
+      //
+      // Drag far enough to actually cross a row boundary, which is what a drop
+      // needs. A token movement lifts the row and drops it back in place, which
+      // leaves the order untouched and would pass this test for the wrong
+      // reason.
+      final gesture = await tester.startGesture(_firstQueueRowPoint(tester));
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      const steps = 12;
+      for (var i = 0; i < steps; i++) {
+        await gesture.moveBy(const Offset(0, 12));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(_visibleQueueTitles(tester), isNot(equals(before)));
+    });
+
+    testWidgets('the drag handle starts a drag without a long press', (
+      WidgetTester tester,
+    ) async {
+      await loadManyQueued(tester);
+      final before = _visibleQueueTitles(tester);
+
+      // Straight into a drag: `pump()` with no duration means the long-press
+      // timer is never reached, so this can only pass if the handle's own
+      // recognizer starts the drag immediately.
+      // Straight into a drag: `pump()` with no duration means the long-press
+      // timer is never reached, so this can only pass if the handle's own
+      // recognizer starts the drag immediately.
+      final gesture = await tester.startGesture(
+        tester.getCenter(_firstQueueHandle()),
+      );
+      await tester.pump();
+      const steps = 12;
+      for (var i = 0; i < steps; i++) {
+        await gesture.moveBy(const Offset(0, 12));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(_visibleQueueTitles(tester), isNot(equals(before)));
+    });
+    testWidgets('a vertical swipe over a row still scrolls the queue', (
+      WidgetTester tester,
+    ) async {
+      // The cost of making the whole row draggable: if the row's listener were
+      // immediate, every swipe that started on a row would become a reorder
+      // instead of a scroll. This is the regression that guards against it.
+      await loadManyQueued(tester);
+      // The full queue, straight off the handler. A scroll legitimately changes
+      // *which* rows are built, so the visible window cannot be compared
+      // before and after - but the underlying order must be identical.
+      final orderBefore = _queueTitles(_lastHandler!);
+
+      final gesture = await tester.startGesture(_firstQueueRowPoint(tester));
+      await tester.pump();
+      const steps = 10;
+      for (var i = 0; i < steps; i++) {
+        await gesture.moveBy(const Offset(0, -12));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(_queueTitles(_lastHandler!), equals(orderBefore));
+    });
   });
 
   testWidgets('Swiping down in the queue body leaves the panel', (
@@ -764,7 +1378,10 @@ void main() {
     if (panelOpen) {
       expect(tester.getTopLeft(find.text('Queue')).dy, closeTo(peekBarTop, 2));
     } else {
-      expect(tester.getTopLeft(find.text('Queue')).dy, greaterThan(peekBarTop + 100));
+      expect(
+        tester.getTopLeft(find.text('Queue')).dy,
+        greaterThan(peekBarTop + 100),
+      );
     }
   });
 
@@ -1060,17 +1677,20 @@ void main() {
     // the band *is* the player rather than a separate widget that hands over.
     final sheet = find.byType(NowPlayingSheet);
     final navBar = find.byType(NavigationBar);
-    expect(tester.getTopLeft(sheet).dy, closeTo(tester.getTopLeft(navBar).dy - NowPlayingSheet.collapsedBarHeight, 1));
+    expect(
+      tester.getTopLeft(sheet).dy,
+      closeTo(
+        tester.getTopLeft(navBar).dy - NowPlayingSheet.collapsedBarHeight,
+        1,
+      ),
+    );
 
     // Nothing is modal at rest, so the navigation bar underneath keeps taking
     // taps. This is the regression guard for the surface spanning the chrome
     // band while the player is collapsed: the surface's own box covers the nav
     // bar's band too, and must not swallow it.
     expect(find.text('Home'), findsOneWidget);
-    expect(
-      find.widgetWithText(NavigationDestination, 'Home'),
-      findsOneWidget,
-    );
+    expect(find.widgetWithText(NavigationDestination, 'Home'), findsOneWidget);
 
     final before = tester.getTopLeft(sheet).dy;
     final gesture = await tester.startGesture(

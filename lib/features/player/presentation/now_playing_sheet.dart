@@ -1,4 +1,4 @@
-﻿import 'dart:math' as math;
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
@@ -79,6 +79,19 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
   /// top without waiting for the new view's first scroll notification.
   PlayerTab? _lastTab;
 
+  /// Drives the Queue/Lyrics pager.
+  ///
+  /// Held rather than built inline because the tab is owned by the controller
+  /// while the offset is owned here: a tap on a tab button has to move the page
+  /// (it cannot change the controller's tab alone, or the highlight and the
+  /// visible page would disagree), and a swipe has to move the controller's tab
+  /// (or the buttons would light up the wrong one). Each direction syncs the
+  /// other, and `_onPanelPageChanged` is the only place that reacts to a
+  /// programmatic jump so the two cannot fight each other.
+  late final PageController _pageController = PageController(
+    initialPage: widget.sheet.tab.index,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -86,10 +99,40 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
       vsync: this,
       duration: const Duration(milliseconds: 260),
     )..addListener(() => widget.sheet.setMorph(_morphAnimation.value));
+    // The tab can be changed from outside the pager (the tab bar buttons), so
+    // the pager follows the controller rather than assuming it is the only
+    // thing that can move it.
+    widget.sheet.addListener(_syncPageToTab);
+  }
+
+  /// Follows a tab change that did not come from a swipe.
+  ///
+  /// A [PageController.jumpToPage] rather than [PageController.animateToPage]:
+  /// the tab button has already animated the *morph* open by the time this
+  /// runs, so animating the page too would slide the content in from the far
+  /// side on top of that. The page cuts instead, which reads as the content
+  /// changing rather than as a second animation starting.
+  void _syncPageToTab() {
+    if (!_pageController.hasClients) return;
+    final target = widget.sheet.tab.index;
+    if (_pageController.page?.round() == target) return;
+    _pageController.jumpToPage(target);
+  }
+
+  /// A swipe settled on a page: adopt it as the selected tab.
+  void _onPanelPageChanged(int page) {
+    final tab = PlayerTab.values[page];
+    widget.sheet.selectTab(tab);
+    // Same reasoning as a tab button tap: the panel is already open to be
+    // swiped inside, but springing it fully open means a swipe started near
+    // the top of the morph leaves the panel in a state a tab tap would.
+    _animateMorph(1.0);
   }
 
   @override
   void dispose() {
+    widget.sheet.removeListener(_syncPageToTab);
+    _pageController.dispose();
     _morphAnimation.dispose();
     super.dispose();
   }
@@ -239,6 +282,7 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
             height: contentHeight,
             child: _SurfaceFill(
               progress: progress,
+              morph: morph,
               child: Column(
                 children: <Widget>[
                   Padding(
@@ -313,40 +357,51 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
                                     _PanelPullRecognizer:
                                         GestureRecognizerFactoryWithHandlers<
                                           _PanelPullRecognizer
-                                        >(
-                                          _PanelPullRecognizer.new,
-                                          (recognizer) {
-                                            recognizer
-                                              ..canPull = _canPullPanel
-                                              ..onStart = _onPanelDragStart
-                                              ..onUpdate = _onPanelDragUpdate
-                                              ..onEnd = _onPanelDragEnd;
-                                          },
-                                        ),
+                                        >(_PanelPullRecognizer.new, (
+                                          recognizer,
+                                        ) {
+                                          recognizer
+                                            ..canPull = _canPullPanel
+                                            ..onStart = _onPanelDragStart
+                                            ..onUpdate = _onPanelDragUpdate
+                                            ..onEnd = _onPanelDragEnd;
+                                        }),
                                   },
-                                  child: NotificationListener<
-                                    ScrollNotification
-                                  >(
+                                  child: NotificationListener<ScrollNotification>(
                                     // Catches what the recognizer does not: a
                                     // pull that began away from the top, where
                                     // the scroll view legitimately owns the
                                     // pointer and only gives the rejected
                                     // distance back as an under-scroll.
-                                    onNotification:
-                                        _onPanelScrollNotification,
+                                    onNotification: _onPanelScrollNotification,
                                     child: Opacity(
                                       opacity: morph.clamp(0.0, 1.0),
-                                      child: switch (sheet.tab) {
-                                        PlayerTab.queue => QueueTab(
-                                          handler: handler,
-                                        ),
-                                        PlayerTab.lyrics => LyricsPane(
-                                          trackId:
-                                              Track.fromExtras(item.extras)
-                                                  ?.id ??
-                                              '',
-                                        ),
-                                      },
+                                      // A pager rather than a `switch` on the
+                                      // selected tab, so the two panels are
+                                      // side by side and can be swiped between.
+                                      // `PageView` keeps its horizontal drag on
+                                      // its own recognizer, which cannot accept
+                                      // a vertical pull, so the panel's
+                                      // close-from-the-top gesture above is
+                                      // untouched by it.
+                                      child: PageView.builder(
+                                        controller: _pageController,
+                                        onPageChanged: _onPanelPageChanged,
+                                        itemCount: PlayerTab.values.length,
+                                        itemBuilder: (context, index) =>
+                                            switch (PlayerTab.values[index]) {
+                                              PlayerTab.queue => QueueTab(
+                                                handler: handler,
+                                              ),
+                                              PlayerTab.lyrics => LyricsPane(
+                                                trackId:
+                                                    Track.fromExtras(
+                                                      item.extras,
+                                                    )?.id ??
+                                                    '',
+                                              ),
+                                            },
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -540,6 +595,15 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
   /// drag into negative pixels instead of reporting it rejected - the gesture
   /// does not fire.
   bool _onPanelScrollNotification(ScrollNotification notification) {
+    // The pager's own scrolling arrives here too - it is a scroll view like any
+    // other, and this listener sits above it - so everything below is about
+    // *vertical* scrolling only. Without this the horizontal swipe between
+    // panels was reporting itself as panel-body motion: it reset the
+    // "at the top" gate that decides whether a pull may close the panel, and
+    // a horizontal drag at the end of the pager reported an under-scroll that
+    // dragged the morph down instead.
+    if (notification.metrics.axis != Axis.vertical) return false;
+
     if (notification is ScrollStartNotification) {
       // A fresh gesture begins: nothing left over to settle from the last.
       _panelPulling = false;
@@ -645,19 +709,42 @@ const double _kPanelPullAcceptPx = 8;
 /// below that is left transparent on purpose, so the real navigation bar shows
 /// through and keeps taking taps.
 class _SurfaceFill extends StatelessWidget {
-  const _SurfaceFill({required this.progress, required this.child});
+  const _SurfaceFill({
+    required this.progress,
+    required this.morph,
+    required this.child,
+  });
 
-  /// 0 collapsed, 1 open. Drives the corner radius and the shadow only; the
-  /// fill's own height is decided by the caller.
+  /// 0 collapsed, 1 open. Drives the shadow strength only; the fill's own
+  /// height is decided by the caller.
   final double progress;
+
+  /// 0 at the main player, 1 once the Queue/Lyrics panel is open. Drives the
+  /// corner radius, which the panel squares off.
+  final double morph;
+
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surface = theme.colorScheme.surface;
+    // The corners belong to the *main player*, so the radius is the open
+    // progress scaled by however much of the main player is still showing —
+    // which is to say by `1 - morph`. At the full player that is the whole
+    // radius, and it unwinds to a hard zero as the Queue/Lyrics panel comes up,
+    // so the panel is met square rather than as a rounded sheet floating over
+    // the player. Driving this off `progress` alone is what left the corners
+    // rounded at full panel open, where they read as a pill rather than as the
+    // player continuing underneath.
+    //
+    // `radius` is left as a real (tiny) value at the very end of the morph
+    // rather than 0 so the animation does not have to round a double to an
+    // exact zero; the leftover is a fraction of a pixel.
     final radius = Radius.circular(
-      _NowPlayingSheetState._topRadius * progress.clamp(0.0, 1.0),
+      _NowPlayingSheetState._topRadius *
+          (1 - morph.clamp(0.0, 1.0)) *
+          progress.clamp(0.0, 1.0),
     );
 
     // The wash at the top is composited against the surface colour by hand
@@ -681,11 +768,19 @@ class _SurfaceFill extends StatelessWidget {
         color: surface,
         // Square while collapsed. The band keeps sharp corners so it reads as
         // one continuous strip with the navigation bar beneath rather than as a
-        // floating pill, and the corner grows in as the player opens.
+        // floating pill, and the corner grows in as the player opens - then
+        // unwinds again as the panel takes over.
         borderRadius: BorderRadius.vertical(top: radius),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25 * progress.clamp(0.0, 1.0)),
+            // Faded out as the panel opens for the same reason the corners
+            // square off: the shadow is there to lift the surface off the
+            // content behind it, and once the panel is up there is no edge to
+            // separate. Left on, a shadow across a square top edge reads as a
+            // seam rather than as depth.
+            color: Colors.black.withValues(
+              alpha: 0.25 * progress.clamp(0.0, 1.0) * (1 - morph),
+            ),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -699,11 +794,11 @@ class _SurfaceFill extends StatelessWidget {
         ),
       ),
       child: // The queue's ListTiles paint their background and ink on the
-      // nearest Material ancestor. Without one between them and this
-      // DecoratedBox, its background colour hides those effects and Flutter
-      // asserts. This is the same guard the pre-merge sheet needed, kept here
-      // because the fill is now inside the surface rather than wrapping it.
-      Material(type: MaterialType.transparency, child: child),
+          // nearest Material ancestor. Without one between them and this
+          // DecoratedBox, its background colour hides those effects and Flutter
+          // asserts. This is the same guard the pre-merge sheet needed, kept here
+          // because the fill is now inside the surface rather than wrapping it.
+          Material(type: MaterialType.transparency, child: child),
     );
   }
 }
@@ -829,11 +924,12 @@ class _MorphingPlayer extends StatelessWidget {
         // which at rest is the top of the band. So at `reveal` 0 the artwork
         // sits exactly where the band puts it, and every pixel of drag carries
         // it up with everything else in here.
-        final artSize =
-            ui.lerpDouble(heroSize, _artSmall, compact) ?? heroSize;
+        final artSize = ui.lerpDouble(heroSize, _artSmall, compact) ?? heroSize;
         final centred = (width - artSize) / 2;
-        final artLeft = ui.lerpDouble(centred, _compactLeft, compact) ?? centred;
-        final artTop = ui.lerpDouble(_heroTop, _compactTop, compact) ?? _heroTop;
+        final artLeft =
+            ui.lerpDouble(centred, _compactLeft, compact) ?? centred;
+        final artTop =
+            ui.lerpDouble(_heroTop, _compactTop, compact) ?? _heroTop;
 
         // Title block: below the hero artwork when full, beside the thumbnail
         // when compact, leaving room for the mini transport on the right.
@@ -1317,9 +1413,8 @@ class _SeekBarState extends State<_SeekBar> {
   @override
   Widget build(BuildContext context) {
     final handler = widget.handler;
-    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-    );
+    final style = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     return StreamBuilder<Duration?>(
       stream: handler.durationStream,
       builder: (context, durationSnapshot) {
