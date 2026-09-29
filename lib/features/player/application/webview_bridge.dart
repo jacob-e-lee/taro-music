@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Something the player told us.
@@ -157,6 +158,15 @@ class YouTubeWebViewBridge {
     if (_events.isClosed) return;
     _events.add(event);
   }
+
+  /// Feeds an event as if the native side had sent it.
+  ///
+  /// The player widget cannot mount in a widget test — a platform view needs a
+  /// real engine — so without this the event path that carries every playback
+  /// update would be unreachable from a test. [enabled] above keeps the widget
+  /// out of the tree; this is the other half of the same seam.
+  @visibleForTesting
+  void debugEmit(WebViewPlayerEvent event) => _emit(event);
 
   /// Loads [videoId] into the player. The same id twice is a no-op, so
   /// re-selecting the current track resumes rather than restarting.

@@ -72,11 +72,22 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
   /// The seek bar's two streams. `BaseAudioHandler` does not supply these as
   /// instance getters (only the deprecated static `AudioHandler.positionStream`
   /// exists), so they are derived from the state published here.
-  Stream<Duration> get positionStream =>
-      playbackState.stream.map((state) => state.position);
+  ///
+  /// Held rather than computed: as getters these built a fresh `map`ped stream
+  /// on every call, so a `StreamBuilder` tore its subscription down and put a
+  /// new one up on every rebuild of the sheet.
+  ///
+  /// [positionStream] carries the *anchor* cadence — one value per published
+  /// state, which [`PlaybackState.position`] then extrapolates between. The seek
+  /// bar re-reads that extrapolation once a frame rather than waiting for this;
+  /// see `_PlaybackClock` in `now_playing_sheet.dart`.
+  late final Stream<Duration> positionStream = playbackState.stream.map(
+    (state) => state.position,
+  );
 
-  Stream<Duration?> get durationStream =>
-      mediaItem.stream.map((item) => item?.duration);
+  late final Stream<Duration?> durationStream = mediaItem.stream.map(
+    (item) => item?.duration,
+  );
 
   // ------------------------------------------------------- player events
 
@@ -101,6 +112,18 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
     }
   }
 
+  /// How far the engine's own clock has to sit from the one the media session
+  /// is extrapolating before it is worth spending a state update on it.
+  ///
+  /// `updatePosition` + `updateTime` is an *anchor*: the platform extrapolates
+  /// forward from it by itself, so republishing it for every status frame would
+  /// rewrite the notification four times a second to say what it already knows.
+  /// A fifth of a second is far below what a seek bar can show and comfortably
+  /// above the jitter between two frames, so in steady playback this stays
+  /// silent and only speaks up when the anchor is genuinely wrong: a stall, a
+  /// rate change, or a seek issued from inside the page.
+  static const Duration _anchorTolerance = Duration(milliseconds: 200);
+
   void _onInfo(PlayerInfo info) {
     _infoEvents++;
     if (info.playabilityStatus == 'ERROR' ||
@@ -113,9 +136,40 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
     }
     final currentTime = info.currentTime;
     if (currentTime == null || currentTime < 0) return;
-    _publish(
-      playbackPosition: Duration(milliseconds: (currentTime * 1000).round()),
+
+    final position = Duration(milliseconds: (currentTime * 1000).round());
+    _fillInDuration(info.duration);
+
+    // One rule covers both steady states, and it is silent in both: while
+    // playing the extrapolation tracks the engine, and while paused the engine
+    // is frozen at the same place the anchor is. So this neither churns the
+    // media session during playback nor re-publishes a motionless position for
+    // every frame of a pause.
+    if ((playbackState.value.position - position).abs() > _anchorTolerance) {
+      _publish(playbackPosition: position);
+    }
+  }
+
+  /// Names a track's length once the engine knows it, for the times the search
+  /// provider did not.
+  ///
+  /// The engine reports a real duration, and it was being parsed and thrown
+  /// away, which left `durationStream` — and so the seek bar's total, and
+  /// whether the slider is usable at all — reading whatever the provider said.
+  /// `Track.duration` is `Duration.zero` when the provider was silent, and a
+  /// zero duration makes the slider inert. Only a *missing* length is filled:
+  /// the provider stays the source of truth when it has an answer, so this
+  /// cannot argue with it, and it stops after one write per track.
+  void _fillInDuration(double? seconds) {
+    if (seconds == null || seconds <= 0) return;
+    final index = _currentQueueIndex;
+    if (index == null || index >= _tracks.length) return;
+    final track = _tracks[index];
+    if (track.duration != Duration.zero) return;
+    _tracks[index] = track.copyWith(
+      duration: Duration(milliseconds: (seconds * 1000).round()),
     );
+    mediaItem.add(_tracks[index].toMediaItem());
   }
 
   /// The player's state codes, mapped onto the media session's vocabulary.
@@ -497,7 +551,14 @@ class WebViewAudioHandler extends BaseAudioHandler with QueueHandler {
       current.copyWith(
         processingState: processing ?? current.processingState,
         playing: playing ?? current.playing,
-        updatePosition: playbackPosition ?? current.updatePosition,
+        // `current.position`, not `current.updatePosition`: the latter is the
+        // raw snapshot the last publish happened to carry, while the former is
+        // that snapshot *plus* the wall clock since `updateTime`, which is the
+        // actual current time. Carrying the snapshot forward is what made
+        // pausing zero the bar — nothing had refreshed it, so it was still the
+        // `Duration.zero` written when the track started, and a paused state
+        // reports `updatePosition` verbatim.
+        updatePosition: playbackPosition ?? current.position,
         speed: speed ?? _speed,
         controls: controls ?? _controlsFor(playing ?? current.playing),
         androidCompactActionIndices: const <int>[0, 1, 2],

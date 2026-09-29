@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/webview_audio_handler.dart';
@@ -12,7 +13,13 @@ import 'player_sheet_controller.dart';
 import 'player_tabs.dart';
 import 'queue_tab.dart';
 
-/// Full-screen player sheet:
+/// The player, as **one surface**.
+///
+/// Collapsed it is the mini player band; dragging up stretches that same
+/// surface into the full-screen player. There is no second widget, no cross
+/// fade and no hand-off: the top edge of the band *becomes* the top edge of
+/// the player, and the artwork in it grows into the hero artwork.
+///
 /// - Prominent hero album artwork with swipe-to-skip gestures (physics-animated)
 /// - Clear visual hierarchy: dominant artwork, extra bold headline track title, secondary artist text
 /// - Fallback high-contrast dark scrim overlay ensuring WCAG 2.1 AA (>= 4.5:1) contrast
@@ -21,9 +28,17 @@ import 'queue_tab.dart';
 class NowPlayingSheet extends ConsumerStatefulWidget {
   const NowPlayingSheet({super.key, required this.sheet});
 
-  /// The persistent player layer, owned by the shell. It starts fully
-  /// collapsed and follows the mini player's drag 1:1.
+  /// The persistent player layer, owned by the shell. It starts collapsed to
+  /// the chrome's height and follows the finger 1:1.
   final PlayerSheetController sheet;
+
+  /// Height of the collapsed band - the surface's "mini player" state.
+  ///
+  /// 48dp of artwork plus the 6dp of padding above and below it, which is what
+  /// the standalone mini player used to be. The shell adds the navigation bar's
+  /// measured height on top of this to get the surface's collapsed height, so
+  /// the surface stands exactly where the chrome it replaces did.
+  static const double collapsedBarHeight = 60;
 
   @override
   ConsumerState<NowPlayingSheet> createState() => _NowPlayingSheetState();
@@ -50,15 +65,9 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
     super.dispose();
   }
 
-  /// Decides whether a drag on the player should leave it open or minimised.
-  ///
-  /// Reads the *direction of release* rather than snapping to the nearest end,
-  /// which is what makes swipe-down-to-minimise work: dragging down even a
-
   @override
   Widget build(BuildContext context) {
     final handler = ref.watch(audioHandlerProvider);
-    final theme = Theme.of(context);
     final sheet = widget.sheet;
 
     return StreamBuilder<MediaItem?>(
@@ -66,61 +75,34 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
       builder: (context, itemSnapshot) {
         final item = itemSnapshot.data;
         if (item == null) {
-          return const Center(child: Text('Nothing playing'));
+          // Nothing loaded: the surface stands in for the chrome, but there is
+          // no band to stand in for. Returning empty keeps the surface from
+          // painting over the shell - and keeps the old "mini player stays
+          // hidden until the first track loads" behaviour, now by construction
+          // rather than by a separate widget deciding to hide itself.
+          return const SizedBox.shrink();
         }
         final track = Track.fromExtras(item.extras);
         final isOffline = track?.isDownloaded ?? false;
 
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Colors.black45,
-                blurRadius: 20,
-                offset: Offset(0, -4),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: <Widget>[
-              // Contrast shield, so text keeps its ratio whatever is behind.
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: <Color>[
-                        theme.colorScheme.surfaceContainerHighest.withValues(
-                          alpha: 0.4,
-                        ),
-                        theme.colorScheme.surface,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // The sheet paints its background through a decorated
-              // Container, so a transparent Material must sit directly
-              // beneath it or ink splashes paint under the decoration.
-              Material(
-                type: MaterialType.transparency,
-                child: AnimatedBuilder(
-                  animation: sheet,
-                  builder: (context, _) => _buildBody(
-                    context,
-                    handler: handler,
-                    item: item,
-                    isOffline: isOffline,
-                  ),
-                ),
-              ),
-            ],
+        // The surface paints its background through a decorated container, so a
+        // transparent Material must sit directly beneath it or ink splashes
+        // paint under the decoration.
+        //
+        // The background itself lives in [_SurfaceFill] rather than here: it
+        // only covers the part of the surface that actually paints, and a
+        // `Positioned.fill` would spill over the navigation bar band that the
+        // surface deliberately leaves transparent.
+        return Material(
+          type: MaterialType.transparency,
+          child: AnimatedBuilder(
+            animation: sheet,
+            builder: (context, _) => _buildBody(
+              context,
+              handler: handler,
+              item: item,
+              isOffline: isOffline,
+            ),
           ),
         );
       },
@@ -144,103 +126,238 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
     required MediaItem item,
     required bool isOffline,
   }) {
-    // Build nothing until the sheet is tall enough to hold the layout. The
-    // body is a fixed-height column (player area + tab bar + content), so
-    // laying it out inside a short sheet overflows; and while the sheet is
-    // barely open there is nothing worth drawing anyway. It is also what keeps
-    // the queue unbuilt on every frame the player spends near-closed.
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    if (widget.sheet.size * screenHeight < _minUsableHeight) {
-      return const SizedBox.shrink();
-    }
+    final sheet = widget.sheet;
+    final morph = sheet.morph;
+    final reveal = sheet.reveal;
+    final revealEase = sheet.revealEase;
+    final progress = sheet.progress;
+    final chromeFade = sheet.chromeFade;
 
-    final morph = widget.sheet.morph;
-    // How open the sheet is. The body reacts to this rather than to `morph`,
-    // so the controls and tabs arrive with the player instead of being
-    // present from the very first pixel of it.
-    final reveal = widget.sheet.reveal;
-    final revealEase = widget.sheet.revealEase;
-    // The sheet is anchored to the bottom of the screen, so the tab bar would
+    // The surface is anchored to the bottom of the screen, so the tab bar would
     // otherwise sit underneath the Android navigation bar / gesture handle.
     //
-    // The LayoutBuilder is deliberately *inside* the Padding: Padding deflates
-    // the constraints handed to its child, so measuring the height outside it
-    // would size the player area to the full sheet and overflow by the inset.
-    final systemInset = MediaQuery.paddingOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: systemInset),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final fullPlayerHeight = math.max(
-            0.0,
-            constraints.maxHeight - _tabBarHeight,
-          );
-          final playerHeight =
-              ui.lerpDouble(fullPlayerHeight, _miniStripHeight, morph) ??
-              fullPlayerHeight;
+    // Scaled by `chromeFade` rather than applied outright: at rest the surface
+    // is standing in for the chrome and its own band already sits above the
+    // navigation bar, so the inset is already accounted for. It is only needed
+    // once the surface has taken the navigation bar's place, which is exactly
+    // what `chromeFade` tracks.
+    final systemInset = MediaQuery.paddingOf(context).bottom * chromeFade;
 
-          return Column(
-            children: <Widget>[
-              SizedBox(
-                height: playerHeight,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragStart: _onAreaDragStart,
-                  onVerticalDragUpdate: _onAreaDragUpdate,
-                  onVerticalDragEnd: _onAreaDragEnd,
-                  child: _MorphingPlayer(
-                    sheet: widget.sheet,
-                    morph: morph,
-                    reveal: reveal,
-                    revealEase: revealEase,
-                    item: item,
-                    isOffline: isOffline,
-                    handler: handler,
-                  ),
-                ),
-              ),
-              SizedBox(
-                height: _tabBarHeight,
-                child: _RevealSlide(
-                  // The tabs ride up with the player and only materialise once
-                  // it is meaningfully open, rather than sitting pinned in
-                  // place the instant the sheet exists.
-                  progress: revealEase,
-                  distance: _tabBarHeight,
-                  child: PlayerTabBar(
-                    controller: widget.sheet,
-                    onTabSelected: widget.sheet.selectTab,
-                    animateMorph: _animateMorph,
-                  ),
-                ),
-              ),
-              Expanded(
-                // Not built at all while collapsed. Fading it in from nothing
-                // would still build every queue row on the first frame of the
-                // drag, which is exactly the cost this split was meant to
-                // avoid.
-                child: morph <= 0.001
-                    ? const SizedBox.shrink()
-                    : Opacity(
-                        opacity: morph.clamp(0.0, 1.0),
-                        child: switch (widget.sheet.tab) {
-                          PlayerTab.queue => QueueTab(handler: handler),
-                          PlayerTab.lyrics => LyricsPane(
-                            trackId: Track.fromExtras(item.extras)?.id ?? '',
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // How much of the surface actually paints.
+        //
+        // At rest this is the mini player band alone; the navigation bar's band
+        // below it stays transparent, so the real navigation bar shows through
+        // and keeps taking taps. The fill extends down to take that band over
+        // within the first sliver of travel - the same window in which the
+        // navigation bar fades - so the two swap rather than cross over.
+        final contentHeight = ui.lerpDouble(
+          _barHeight,
+          constraints.maxHeight,
+          chromeFade,
+        )!;
+
+        // The tab bar belongs to the *open* player, so it reserves no height
+        // while collapsed, which is what leaves the band's full height for its
+        // own row. Capped at the room available so a part-open surface cannot
+        // overflow the column.
+        final tabBarHeight = math.min(
+          _tabBarHeight * reveal.clamp(0.0, 1.0),
+          contentHeight,
+        );
+        // The inset comes off first: it is padding on the whole column, so
+        // everything inside has to be measured against what is left after it.
+        final usable = math.max(0.0, contentHeight - systemInset);
+        final fullPlayerHeight = math.max(0.0, usable - tabBarHeight);
+        // The peek state's strip is a fixed height too, so it is clamped into
+        // whatever room is actually left over.
+        final playerHeight = math.min(
+          ui.lerpDouble(fullPlayerHeight, _miniStripHeight, morph) ??
+              fullPlayerHeight,
+          fullPlayerHeight,
+        );
+        // The tab content takes the remainder, computed rather than left to an
+        // `Expanded`: an `Expanded` here would sit under a `Column`, which hands
+        // its children *loose* height constraints, leaving the flex child with
+        // an unbounded height to divide and throwing at layout.
+        final tabContentHeight = math.max(
+          0.0,
+          usable - playerHeight - tabBarHeight,
+        );
+
+        return Align(
+          // Top-anchored within the surface: the band's top edge *is* the
+          // surface's top edge, which is the whole point of the merge.
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: contentHeight,
+            child: _SurfaceFill(
+              progress: progress,
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    // Inside the SizedBox, so the padding deflates the
+                    // constraints and the column cannot overflow by the inset.
+                    padding: EdgeInsets.only(bottom: systemInset),
+                    child: Column(
+                      children: <Widget>[
+                        SizedBox(
+                          height: playerHeight,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onVerticalDragStart: _onDragStart,
+                            onVerticalDragUpdate: _onDragUpdate,
+                            onVerticalDragEnd: _onDragEnd,
+                            // A tap on the collapsed band opens the player. This
+                            // used to live on the mini player's InkWell; the
+                            // merged surface is its only drag/tap target now, so
+                            // without it the band would be drag-only.
+                            onTap: sheet.isOpen ? null : sheet.open,
+                            child: _MorphingPlayer(
+                              sheet: sheet,
+                              morph: morph,
+                              reveal: reveal,
+                              revealEase: revealEase,
+                              item: item,
+                              isOffline: isOffline,
+                              handler: handler,
+                            ),
                           ),
-                        },
-                      ),
+                        ),
+                        SizedBox(
+                          height: tabBarHeight,
+                          child: _RevealSlide(
+                            // The tabs ride up with the player and only
+                            // materialise once it is meaningfully open, rather
+                            // than sitting pinned in place from the first pixel.
+                            progress: revealEase,
+                            distance: _tabBarHeight,
+                            child: PlayerTabBar(
+                              controller: sheet,
+                              onTabSelected: sheet.selectTab,
+                              animateMorph: _animateMorph,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: tabContentHeight,
+                          child: morph <= 0.001
+                              ? const SizedBox.shrink()
+                              : Opacity(
+                                  opacity: morph.clamp(0.0, 1.0),
+                                  child: switch (sheet.tab) {
+                                    PlayerTab.queue => QueueTab(handler: handler),
+                                    PlayerTab.lyrics => LyricsPane(
+                                      trackId:
+                                          Track.fromExtras(item.extras)?.id ?? '',
+                                    ),
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
   // ---------------------------------------------------------------------
-  // The two gestures, kept on separate widgets so they never contend.
+  // One drag, two ends - and no locked-out direction.
+  //
+  // There is no hand-off event between "the mini player" and "the player"
+  // because there is only one surface, and the finger writes its height
+  // directly. So a drag that starts upward can turn around and come back down
+  // mid-gesture, and one that starts downward can turn around and go back up.
+  // Only the release has to choose between the two ends, and it chooses from
+  // the direction the finger was *last* moving together with how far along the
+  // travel it got.
   // ---------------------------------------------------------------------
+
+  /// Finger travel in pixels when the current drag began, so updates stay
+  /// relative rather than accumulating rounding error.
+  double _dragBase = 0;
+
+  /// Whether the finger was last moving upward.
+  ///
+  /// Re-read on every update rather than latched when the drag starts. Latching
+  /// it is what used to make a drag's opening direction irreversible: it
+  /// decided once that "this gesture opens" or "this gesture dismisses", then
+  /// discarded every delta that disagreed with that answer, so a drag that
+  /// turned around appeared to freeze until the finger was lifted.
+  bool _movingUp = true;
+
+  void _onDragStart(DragStartDetails details) {
+    _morphAnimation.stop();
+    _dragBase = widget.sheet.dragPx;
+    // Seeded from where the surface already is, so a drag too short to register
+    // a direction still settles the way a flick from that end would.
+    _movingUp = !widget.sheet.isOpen;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final dy = details.delta.dy;
+    if (dy == 0) return;
+    _movingUp = dy < 0;
+    // Applied whatever its sign, and at both ends of the travel: the controller
+    // clamps, so dragging past an end parks the surface there and pulling back
+    // the other way resumes from it immediately.
+    widget.sheet.dragTo(_dragBase - dy);
+    // Rebased on the *clamped* result, so travel banked up past an end is not
+    // spent the instant the finger comes back.
+    _dragBase = widget.sheet.dragPx;
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    final sheet = widget.sheet;
+
+    // A decisive flick settles on its own, without consulting where the finger
+    // happened to stop.
+    if (velocity <= _kFlingVelocity) {
+      sheet.open();
+      return;
+    }
+    if (velocity >= _dismissFlingVelocity) {
+      sheet.close();
+      return;
+    }
+
+    // A slow release settles by position, against the threshold belonging to
+    // the direction the finger was last moving. A single shared threshold would
+    // be wrong either way round: a drag *out* of the band only has to clear a
+    // nudge before it counts, while a drag back down has to cover most of the
+    // travel before it means "dismiss".
+    final settleOpen = _movingUp
+        ? sheet.dragPx >= _kOpenPx
+        : sheet.dragPx >= sheet.maxDragPx * _dismissFraction;
+    if (settleOpen) {
+      sheet.open();
+    } else {
+      sheet.close();
+    }
+  }
+
+  /// Travel past which a release opens the surface, in logical pixels.
+  ///
+  /// The drag is now strictly 1:1, so this is a real distance rather than a
+  /// fraction of a gained one. It is small because a short flick still opens
+  /// on intent, and a genuinely stray nudge is much shorter than this.
+  static const double _kOpenPx = 56;
+
+  /// An upward fling always opens, even from a very short drag.
+  static const double _kFlingVelocity = -400;
+
+  /// A release this fast counts as a deliberate flick towards dismissing.
+  static const double _dismissFlingVelocity = 300;
+
+  /// Below this fraction of the travel, letting go means "dismiss me".
+  static const double _dismissFraction = 0.5;
 
   /// Springs the morph to [target]. The value lives on the controller so the
   /// tab bar can drag it directly while this owns the animation.
@@ -254,50 +371,90 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
     );
   }
 
-  void _onAreaDragStart(DragStartDetails details) {
-    _morphAnimation.stop();
-    _dismissBase = widget.sheet.size;
-  }
-
-  /// Dragging down anywhere above the tab bar dismisses the player. Upward
-  /// drags are ignored here: growing the player is the mini player's job, and
-  /// the tab bar owns the morph.
-  void _onAreaDragUpdate(DragUpdateDetails details) {
-    if (details.delta.dy <= 0) return;
-    final height = MediaQuery.sizeOf(context).height;
-    if (height <= 0) return;
-    widget.sheet.jumpToSize(_dismissBase - details.delta.dy / height);
-    _dismissBase = widget.sheet.size;
-  }
-
-  void _onAreaDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final sheet = widget.sheet;
-    // Direction decides, not proximity: a flick down always dismisses, and a
-    // slow drag only dismisses once it is genuinely most of the way down.
-    if (velocity > _dismissFlingVelocity ||
-        sheet.size < sheet.maxSize * _dismissSizeFraction) {
-      sheet.close();
-    } else {
-      sheet.open();
-    }
-  }
-
-  /// A release this fast counts as a deliberate flick towards dismissing.
-  static const double _dismissFlingVelocity = 300;
-
-  /// Below this fraction of the full height, letting go means "dismiss me".
-  static const double _dismissSizeFraction = 0.5;
-
-  /// Shortest sheet that can host the player layout without overflowing.
-  static const double _minUsableHeight = 220;
-
   static const double _tabBarHeight = 58;
   static const double _miniStripHeight = 64;
 
-  /// Sheet size when the current area drag started, so updates stay relative
-  /// rather than accumulating rounding error.
-  double _dismissBase = 0;
+  /// Height of the collapsed band - the surface's "mini player" state.
+  ///
+  /// 48dp of artwork plus the 6dp of padding above and below it, which is what
+  /// the standalone mini player used to be. The shell adds the navigation bar's
+  /// measured height on top of this to get the surface's collapsed height.
+  static const double _barHeight = NowPlayingSheet.collapsedBarHeight;
+
+  /// Corner radius the open player rounds its top to. Zero while collapsed:
+  /// the band keeps sharp corners, so it reads as one continuous strip with the
+  /// navigation bar beneath rather than as a floating pill.
+  static const double _topRadius = 24;
+}
+
+/// The painted fill of the surface: background, shadow, and top corners.
+///
+/// Sized to whatever the surface is actually painting, which is the collapsed
+/// band at rest and the whole surface once open. The navigation bar's band
+/// below that is left transparent on purpose, so the real navigation bar shows
+/// through and keeps taking taps.
+class _SurfaceFill extends StatelessWidget {
+  const _SurfaceFill({required this.progress, required this.child});
+
+  /// 0 collapsed, 1 open. Drives the corner radius and the shadow only; the
+  /// fill's own height is decided by the caller.
+  final double progress;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surface;
+    final radius = Radius.circular(
+      _NowPlayingSheetState._topRadius * progress.clamp(0.0, 1.0),
+    );
+
+    // The wash at the top is composited against the surface colour by hand
+    // instead of being a translucent gradient stop.
+    //
+    // `BoxDecoration` hands the gradient to the paint as a *shader*, and a
+    // shader replaces the colour rather than blending over it: `color` is
+    // ignored outright once `gradient` is set. A stop at 40% alpha is therefore
+    // 60% see-through, which is what made the open player look translucent.
+    // Blending it down to an opaque colour gives the identical wash with
+    // nothing showing through it.
+    final shield = Color.alphaBlend(
+      theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      surface,
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        // A fallback for if the gradient is ever dropped. As noted above, this
+        // colour is not actually painted while `gradient` is set.
+        color: surface,
+        // Square while collapsed. The band keeps sharp corners so it reads as
+        // one continuous strip with the navigation bar beneath rather than as a
+        // floating pill, and the corner grows in as the player opens.
+        borderRadius: BorderRadius.vertical(top: radius),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25 * progress.clamp(0.0, 1.0)),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+        // Contrast shield, so text keeps its ratio whatever is behind. Both
+        // stops are opaque, so the shell cannot show through the surface.
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[shield, surface],
+        ),
+      ),
+      child: // The queue's ListTiles paint their background and ink on the
+      // nearest Material ancestor. Without one between them and this
+      // DecoratedBox, its background colour hides those effects and Flutter
+      // asserts. This is the same guard the pre-merge sheet needed, kept here
+      // because the fill is now inside the surface rather than wrapping it.
+      Material(type: MaterialType.transparency, child: child),
+    );
+  }
 }
 
 /// Fades and slides content in as the player opens.
@@ -364,18 +521,23 @@ class _MorphingPlayer extends StatelessWidget {
 
   static const double _artSmall = 48;
   static const double _sidePad = 24;
-  static const double _miniPad = 16;
   static const double _heroTop = 68;
 
-  /// Mirrors the shell mini player's artwork so the two line up during the
-  /// hand-off. Kept here rather than imported to avoid a cycle between the
-  /// shell and the player.
-  static const double _shellMiniArtSize = 48;
-  static const double _shellMiniArtLeft = 8;
+  /// The compact state: the collapsed band, and the peek strip.
+  ///
+  /// These two are the same layout - a 48dp thumbnail with the title beside it
+  /// and play/next on the right - differing only in how much room they sit in,
+  /// which is the caller's business. The full player is the other end of the
+  /// same axis.
+  static const double _compactLeft = 8;
+  static const double _compactTop = 6;
+  static const double _compactTitleLeft = 68;
+  static const double _compactTitleTop = 10;
+  static const double _compactTitleRight = 116;
 
-  /// Distance from the bottom of the screen to the top of the shell mini
-  /// player's artwork (mini player padding plus the navigation bar).
-  static const double _shellMiniArtBottomGap = 96;
+  /// Room reserved beneath the hero artwork for the title block and the
+  /// transport row, so the artwork is never sized into them.
+  static const double _artFootprintBelow = 190;
 
   /// How far the transport row travels as the player opens.
   static const double _controlsRevealDistance = 90;
@@ -385,52 +547,56 @@ class _MorphingPlayer extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-
-        // Two axes compose here:
-        //
-        //  * `reveal` (the sheet opening) takes the artwork from the shell mini
-        //    player's 48dp thumbnail to the hero artwork, so the bar's artwork
-        //    grows into the player's rather than being swapped for it.
-        //  * `morph` (the full <-> peek morph) then takes the hero artwork
-        //    back down to the in-player mini strip.
-        final heroSize = (width - 48).clamp(240.0, 320.0);
-
-        // Collapse toward the mini player's artwork position, then morph.
-        final fromMiniSize =
-            ui.lerpDouble(_shellMiniArtSize, heroSize, reveal) ?? heroSize;
-        final fromMiniLeft =
-            ui.lerpDouble(_shellMiniArtLeft, (width - heroSize) / 2, reveal) ??
-            _shellMiniArtLeft;
-        // The player area is the bottom `reveal` fraction of the screen, so the
-        // shell mini player's artwork - which sits just above the navigation
-        // bar - is, in this area's coordinates, its own height minus the
-        // distance from that artwork to the bottom of the screen.
         final areaHeight = constraints.maxHeight;
-        final miniTopInArea = areaHeight - _shellMiniArtBottomGap;
-        final fromMiniTop =
-            ui.lerpDouble(miniTopInArea, _heroTop, reveal) ?? _heroTop;
 
+        // One axis drives the whole layout, and it collapses the two former
+        // axes into each other:
+        //
+        //  * `morph` (the full <-> peek morph) is 1 at the peek strip.
+        //  * `reveal` (the surface opening) is 0 at the collapsed band, so
+        //    1 - reveal is 1 at the band.
+        //
+        // Taking the max of the two gives 1 for *both* compact states and 0
+        // only for the full player, which is precisely "how unlike the full
+        // player is this". It is why the collapsed band and the peek strip can
+        // share one layout, and why the band needs no second widget.
+        final compact = math.max(morph, 1.0 - reveal.clamp(0.0, 1.0));
+
+        // The hero size is capped by the area's own height as well as its
+        // width, so the artwork is never a slab with its bottom sliced off; it
+        // simply keeps growing as the surface does.
+        final maxByHeight = math.max(
+          _artSmall,
+          areaHeight - _heroTop - _artFootprintBelow,
+        );
+        final heroSize = math.min(
+          (width - 48).clamp(240.0, 320.0),
+          maxByHeight,
+        );
+
+        // Anchored to the *top* of the area, which is the top of the surface,
+        // which at rest is the top of the band. So at `reveal` 0 the artwork
+        // sits exactly where the band puts it, and every pixel of drag carries
+        // it up with everything else in here.
         final artSize =
-            ui.lerpDouble(fromMiniSize, _artSmall, morph) ?? fromMiniSize;
-        final artLeft =
-            ui.lerpDouble(fromMiniLeft, _miniPad, morph) ?? fromMiniLeft;
-        // From the mini player the artwork sits low in the sheet; as the sheet
-        // opens, that offset is expressed relative to the sheet's own height.
-        final artTop = ui.lerpDouble(fromMiniTop, 8, morph) ?? fromMiniTop;
+            ui.lerpDouble(heroSize, _artSmall, compact) ?? heroSize;
+        final centred = (width - artSize) / 2;
+        final artLeft = ui.lerpDouble(centred, _compactLeft, compact) ?? centred;
+        final artTop = ui.lerpDouble(_heroTop, _compactTop, compact) ?? _heroTop;
 
         // Title block: below the hero artwork when full, beside the thumbnail
-        // when peeked, leaving room for the mini transport on the right.
+        // when compact, leaving room for the mini transport on the right.
         final titleLeft =
-            ui.lerpDouble(_sidePad, _miniPad + _artSmall + 12, morph) ??
-            _sidePad;
-        final titleRight = ui.lerpDouble(_sidePad, 116, morph) ?? _sidePad;
+            ui.lerpDouble(_sidePad, _compactTitleLeft, compact) ?? _sidePad;
+        final titleRight =
+            ui.lerpDouble(_sidePad, _compactTitleRight, compact) ?? _sidePad;
         final titleTop =
-            ui.lerpDouble(artTop + artSize + 24, 10, morph) ??
+            ui.lerpDouble(artTop + artSize + 24, _compactTitleTop, compact) ??
             artTop + artSize + 24;
 
-        // The hero-only chrome fades out as the mini strip fades in.
-        final heroOpacity = (1.0 - morph).clamp(0.0, 1.0);
-        final miniOpacity = morph.clamp(0.0, 1.0);
+        // The hero-only chrome fades out as either compact state fades in.
+        final heroOpacity = (1.0 - compact).clamp(0.0, 1.0);
+        final miniOpacity = compact.clamp(0.0, 1.0);
 
         return Stack(
           children: <Widget>[
@@ -443,7 +609,7 @@ class _MorphingPlayer extends StatelessWidget {
               child: Opacity(
                 opacity: heroOpacity,
                 child: IgnorePointer(
-                  ignoring: morph > 0.5,
+                  ignoring: compact > 0.5,
                   child: _Header(onClose: sheet.close),
                 ),
               ),
@@ -469,20 +635,26 @@ class _MorphingPlayer extends StatelessWidget {
               left: titleLeft,
               top: titleTop,
               right: titleRight,
-              child: _MorphingTitle(item: item, morph: morph),
+              child: _MorphingTitle(item: item, compact: compact),
             ),
 
-            // ---- mini transport (peek only) ----
+            // ---- compact transport: play/next, for the band and the strip ----
+            //
+            // One widget for both compact states. At rest this is the band's
+            // own transport, so the bar's controls are the player's controls
+            // rather than a copy of them.
             Positioned(
-              right: _miniPad - 8,
+              right: _compactLeft,
               top: 0,
               width: 112,
-              height: _MorphingPlayer._stripHeight,
+              // Clamped to the room available: the band is shorter than the
+              // peek strip, and the buttons centre within it.
+              height: math.min(_stripHeight, areaHeight),
               child: Opacity(
                 opacity: miniOpacity,
                 child: IgnorePointer(
-                  ignoring: morph < 0.5,
-                  child: _MiniTransport(handler: handler),
+                  ignoring: compact < 0.5,
+                  child: Center(child: _MiniTransport(handler: handler)),
                 ),
               ),
             ),
@@ -491,8 +663,8 @@ class _MorphingPlayer extends StatelessWidget {
             //
             // These slide up with the player and only appear once it is
             // meaningfully open, rather than being present and pinned from the
-            // first frame. `heroOpacity` still fades them out in the peek
-            // state, so the two axes compose.
+            // first frame. `heroOpacity` still fades them out in the compact
+            // states, so the two axes compose.
             Positioned(
               left: _sidePad,
               right: _sidePad,
@@ -500,14 +672,19 @@ class _MorphingPlayer extends StatelessWidget {
               child: Opacity(
                 opacity: heroOpacity,
                 child: IgnorePointer(
-                  ignoring: morph > 0.5 || reveal < 0.99,
+                  ignoring: compact > 0.5 || reveal < 0.99,
                   child: _RevealSlide(
                     progress: revealEase,
                     distance: _controlsRevealDistance,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        _SeekBar(handler: handler),
+                        _SeekBar(
+                          handler: handler,
+                          // The same condition the `IgnorePointer` above uses:
+                          // the clock only runs while the bar is in view.
+                          enabled: compact <= 0.5 && reveal >= 0.99,
+                        ),
                         const SizedBox(height: 12),
                         _PlayerControls(handler: handler),
                       ],
@@ -584,16 +761,16 @@ class _Header extends StatelessWidget {
 /// Track title and artist, interpolating from the hero treatment to the
 /// compact one that sits beside the mini thumbnail.
 class _MorphingTitle extends StatelessWidget {
-  const _MorphingTitle({required this.item, required this.morph});
+  const _MorphingTitle({required this.item, required this.compact});
 
   final MediaItem item;
-  final double morph;
+  final double compact;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final titleSize = ui.lerpDouble(24, 15, morph) ?? 24;
-    final artistSize = ui.lerpDouble(16, 13, morph) ?? 16;
+    final titleSize = ui.lerpDouble(24, 15, compact) ?? 24;
+    final artistSize = ui.lerpDouble(16, 13, compact) ?? 13;
     final offline = Track.fromExtras(item.extras)?.isDownloaded ?? false;
 
     return Column(
@@ -618,7 +795,7 @@ class _MorphingTitle extends StatelessWidget {
             if (offline) ...<Widget>[
               Icon(
                 Icons.offline_pin,
-                size: ui.lerpDouble(16, 12, morph)!,
+                size: ui.lerpDouble(16, 12, compact)!,
                 color: theme.colorScheme.primary,
               ),
               const SizedBox(width: 4),
@@ -864,68 +1041,192 @@ class _SwipeableAlbumArtState extends State<_SwipeableAlbumArt>
   }
 }
 
-class _SeekBar extends StatelessWidget {
-  const _SeekBar({required this.handler});
+class _SeekBar extends StatefulWidget {
+  const _SeekBar({required this.handler, required this.enabled});
 
   final WebViewAudioHandler handler;
 
+  /// Whether the bar is on screen. A collapsed player has nothing to animate.
+  final bool enabled;
+
+  @override
+  State<_SeekBar> createState() => _SeekBarState();
+}
+
+class _SeekBarState extends State<_SeekBar> {
+  /// Where the finger is, while it is down. Null when it is not.
+  ///
+  /// The slider's value is otherwise owned by the engine's clock, which the
+  /// ticker below re-reads every frame while playing — so without a value of our
+  /// own to hold during a drag, the thumb would be yanked back to the playback
+  /// position between one drag frame and the next and scrubbing would be
+  /// impossible.
+  Duration? _scrub;
+
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final handler = widget.handler;
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
     return StreamBuilder<Duration?>(
       stream: handler.durationStream,
       builder: (context, durationSnapshot) {
         final duration = durationSnapshot.data ?? Duration.zero;
         final maxMs = duration.inMilliseconds.toDouble();
+        // This builder repaints once per published *anchor*; `_PlaybackClock`
+        // is what moves the bar between those.
         return StreamBuilder<Duration>(
           stream: handler.positionStream,
           initialData: Duration.zero,
-          builder: (context, positionSnapshot) {
-            final position = positionSnapshot.data ?? Duration.zero;
-            final value = position.inMilliseconds
-                .toDouble()
-                .clamp(0, maxMs <= 0 ? 1 : maxMs)
-                .toDouble();
-            return Column(
-              children: <Widget>[
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 6,
+          builder: (context, _) => _PlaybackClock(
+            handler: handler,
+            // Nothing to animate while the finger owns the value.
+            enabled: widget.enabled && _scrub == null,
+            builder: (context, clock) {
+              final position = _scrub ?? clock;
+              final value = position.inMilliseconds
+                  .toDouble()
+                  .clamp(0, maxMs <= 0 ? 1 : maxMs)
+                  .toDouble();
+              return Column(
+                children: <Widget>[
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 4,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 16,
+                      ),
                     ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
+                    child: Slider(
+                      min: 0,
+                      max: maxMs <= 0 ? 1 : maxMs,
+                      value: value,
+                      onChanged: duration == Duration.zero
+                          ? null
+                          : (seekTo) {
+                              final target = Duration(
+                                milliseconds: seekTo.round(),
+                              );
+                              setState(() => _scrub = target);
+                              handler.seek(target);
+                            },
+                      onChangeEnd: duration == Duration.zero
+                          ? null
+                          : (_) => setState(() => _scrub = null),
                     ),
                   ),
-                  child: Slider(
-                    min: 0,
-                    max: maxMs <= 0 ? 1 : maxMs,
-                    value: value,
-                    onChanged: duration == Duration.zero
-                        ? null
-                        : (v) =>
-                              handler.seek(Duration(milliseconds: v.round())),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        Text(_clock(position), style: style),
+                        Text(_clock(duration), style: style),
+                      ],
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: <Widget>[
-                      Text(_clock(position), style: style),
-                      Text(_clock(duration), style: style),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         );
       },
     );
   }
+}
+
+/// The seek bar's clock.
+///
+/// [`PlaybackState.position`] is already a live value — it is `updatePosition`
+/// plus the wall clock since `updateTime`, while playing — so all it ever needed
+/// was somebody reading it again. This reads it once per display frame, which is
+/// what turns the engine's slow anchor updates into motion at the refresh rate
+/// the screen actually has.
+///
+/// That is affordable because of how little it does. It is gated on the engine
+/// reporting playback *and* the bar being on screen, so a paused or collapsed
+/// player costs nothing at all; and it touches no platform channel, which is
+/// exactly what publishing a state per engine frame would have done.
+///
+/// Worth knowing before writing a test against it: while this is ticking the
+/// tree has a frame scheduled indefinitely, so `pumpAndSettle` will not return.
+/// Pump with an explicit duration instead — the rule the loading spinner in this
+/// file already imposes.
+class _PlaybackClock extends StatefulWidget {
+  const _PlaybackClock({
+    required this.handler,
+    required this.enabled,
+    required this.builder,
+  });
+
+  final WebViewAudioHandler handler;
+
+  /// Whether the bar is on screen.
+  final bool enabled;
+
+  final Widget Function(BuildContext context, Duration position) builder;
+
+  @override
+  State<_PlaybackClock> createState() => _PlaybackClockState();
+}
+
+class _PlaybackClockState extends State<_PlaybackClock>
+    with SingleTickerProviderStateMixin {
+  late final Ticker _ticker = createTicker(_onFrame);
+
+  /// A paused engine has a frozen position, so there is nothing to re-read and
+  /// no reason to keep asking for frames.
+  bool get _running =>
+      widget.enabled && widget.handler.playbackState.value.playing;
+
+  void _onFrame(Duration _) {
+    if (!_running) {
+      _ticker.stop();
+      return;
+    }
+    setState(() {});
+  }
+
+  void _sync() {
+    if (_running && !_ticker.isActive) {
+      _ticker.start();
+    } else if (!_running && _ticker.isActive) {
+      _ticker.stop();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_PlaybackClock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Everything that changes the answer — a new anchor, play or pause, the bar
+    // sliding into view — arrives here as a rebuild from the streams above.
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    // Stopped before disposal: a Ticker that is still active when its state is
+    // disposed trips the provider mixin's own assertion, and this sheet is torn
+    // down mid-playback every time the app is closed.
+    _ticker
+      ..stop()
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      widget.builder(context, widget.handler.playbackState.value.position);
 }
 
 class _PlayerControls extends StatefulWidget {

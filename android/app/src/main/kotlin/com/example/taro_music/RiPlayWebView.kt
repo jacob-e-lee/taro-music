@@ -219,6 +219,7 @@ class RiPlayWebView(
                 <script>
                   var pending = [];
                   var player = null;
+                  var state = -1;
 
                   // The IFrame API is a network script, so on a cold start
                   // `player` is briefly undefined. Commands queue here and
@@ -261,16 +262,46 @@ class RiPlayWebView(
                           $JS_BRIDGE_NAME.sendReady();
                         },
                         onStateChange: function (event) {
+                          state = event.data;
                           $JS_BRIDGE_NAME.sendState(event.data);
                         },
                         onError: function (event) {
                           $JS_BRIDGE_NAME.sendError(String(event.data));
-                        },
-                        onInfoDelivery: function (event) {
-                          $JS_BRIDGE_NAME.sendInfo(JSON.stringify(event.info));
                         }
                       }
                     });
+
+                    // The engine's own clock, pushed as it ticks.
+                    //
+                    // Deliberately *not* an `events` callback. The IFrame API's
+                    // `events` map recognises exactly six names - onReady,
+                    // onStateChange, onPlaybackQualityChange,
+                    // onPlaybackRateChange, onError and onApiChange - and
+                    // `infoDelivery` is not one of them: it is a postMessage
+                    // frame between the player iframe and this page, not a
+                    // Player event. An `onInfoDelivery` key in `events` is
+                    // therefore silently ignored, which is why not one position
+                    // update ever reached Dart and the progress bar only moved
+                    // when something else happened to touch the player. Polling
+                    // the documented getters is the supported way to follow the
+                    // clock.
+                    //
+                    // The rate below is only a drift check: the seek bar
+                    // extrapolates between these frames and re-reads its clock
+                    // once per display frame, so these frames exist to catch a
+                    // stall or a seek issued from inside the page, and to report
+                    // a true duration for tracks the search provider left blank.
+                    setInterval(function () {
+                      if (!player || typeof player.getCurrentTime !== 'function') return;
+                      // Playing or paused. A cued or unstarted player has no
+                      // clock worth reporting, and a frame for one would only
+                      // move the progress bar back to zero.
+                      if (state !== 1 && state !== 2) return;
+                      $JS_BRIDGE_NAME.sendInfo(JSON.stringify({
+                        currentTime: player.getCurrentTime(),
+                        duration: player.getDuration()
+                      }));
+                    }, 250);
                   }
 
                   var tag = document.createElement('script');

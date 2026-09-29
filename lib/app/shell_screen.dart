@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../features/home/presentation/home_screen.dart';
 import '../features/library/presentation/library_screen.dart';
-import '../features/player/presentation/mini_player.dart';
 import '../features/player/presentation/now_playing_sheet.dart';
 import '../features/player/presentation/player_sheet_controller.dart';
 import '../features/search/presentation/search_screen.dart';
@@ -24,10 +23,48 @@ class _ShellScreenState extends State<ShellScreen>
   late int _currentIndex;
   late final PageController _pageController;
 
-  /// The full-screen player, mounted as a persistent layer rather than
-  /// pushed as a modal route. This is what lets an upward drag on the mini
-  /// player pull the real player up with the finger in one motion.
+  /// The player surface, mounted as a persistent layer rather than pushed as a
+  /// modal route. This is what lets an upward drag on the collapsed band pull
+  /// the real player up with the finger in one motion.
   late final PlayerSheetController _player = PlayerSheetController(vsync: this);
+
+  /// Measures the navigation bar so the surface knows how tall the chrome it
+  /// stands in for actually is.
+  final GlobalKey _navBarKey = GlobalKey();
+
+  double _publishedNavHeight = 0;
+  double _publishedScreenHeight = 0;
+
+  /// Pushes the measured viewport into the controller.
+  ///
+  /// Called from a post-frame callback rather than inline, because reading a
+  /// [GlobalKey]'s size mid-build would mean notifying listeners during a
+  /// build. Only fires when a measurement has actually moved, so a steady
+  /// stream of frames costs one float compare.
+  void _publishViewport() {
+    if (!mounted) return;
+    // `hasSize` rather than reading `.size` directly: this can fire while a
+    // render object is still awaiting layout - notably during a route
+    // transition, as the deep-link startup test does - and asking an unlaid-out
+    // render object for its size throws.
+    final box = _navBarKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final navHeight = box.size.height;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    if (navHeight <= 0 || screenHeight <= 0) return;
+    if ((navHeight - _publishedNavHeight).abs() < 0.5 &&
+        (screenHeight - _publishedScreenHeight).abs() < 0.5) {
+      return;
+    }
+    _publishedNavHeight = navHeight;
+    _publishedScreenHeight = screenHeight;
+    _player.setViewport(
+      screenHeight: screenHeight,
+      // The surface covers the whole chrome band: the navigation bar plus the
+      // collapsed player band that used to be a separate widget.
+      collapsedHeight: navHeight + NowPlayingSheet.collapsedBarHeight,
+    );
+  }
 
   @override
   void initState() {
@@ -80,59 +117,58 @@ class _ShellScreenState extends State<ShellScreen>
               children: tabs,
             ),
           ),
-          // Persistent bottom structure: MiniPlayer mounted directly above
-          // NavigationBar. Both fade out almost immediately once the player
-          // starts rising, so the hand-off reads as one surface transforming
-          // rather than the player sliding up over a second bar.
+          // The navigation bar and nothing else. The mini player that used to
+          // sit above it is now the *collapsed state of the player surface*, so
+          // there is no second bar to keep aligned with the player - and no
+          // hand-off between them.
+          //
+          // The bar itself fades out over `chromeFade`, the same short window
+          // in which the surface's fill extends down to take over its band.
           bottomNavigationBar: AnimatedBuilder(
             animation: _player,
             builder: (context, child) {
-              final opacity = PlayerSheetController.chromeOpacity(
-                _player.size,
-                _player.dragFraction,
-                _player.maxSize,
-              );
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _publishViewport();
+              });
+              final opacity = 1.0 - _player.chromeFade;
               return Opacity(
-                opacity: opacity,
+                opacity: opacity.clamp(0.0, 1.0),
                 child: IgnorePointer(ignoring: opacity <= 0.01, child: child),
               );
             },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                MiniPlayer(sheetController: _player),
-                NavigationBar(
-                  selectedIndex: _currentIndex,
-                  onDestinationSelected: _onSelectTab,
-                  destinations: const [
-                    NavigationDestination(
-                      icon: Icon(Icons.home_outlined),
-                      selectedIcon: Icon(Icons.home),
-                      label: 'Home',
-                      tooltip: 'Home tab',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.search_outlined),
-                      selectedIcon: Icon(Icons.search),
-                      label: 'Search',
-                      tooltip: 'Search tab',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.library_music_outlined),
-                      selectedIcon: Icon(Icons.library_music),
-                      label: 'Library',
-                      tooltip: 'Library tab',
-                    ),
-                  ],
-                ),
-              ],
+            child: KeyedSubtree(
+              key: _navBarKey,
+              child: NavigationBar(
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _onSelectTab,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home),
+                    label: 'Home',
+                    tooltip: 'Home tab',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.search_outlined),
+                    selectedIcon: Icon(Icons.search),
+                    label: 'Search',
+                    tooltip: 'Search tab',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.library_music_outlined),
+                    selectedIcon: Icon(Icons.library_music),
+                    label: 'Library',
+                    tooltip: 'Library tab',
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-        // The full-screen player lives *above* the whole shell, not inside the
-        // Scaffold body: it has to be able to cover the navigation bar and the
-        // mini player while it expands. It is always mounted (at size 0) so the
-        // mini player's drag can drive it frame by frame.
+        // The player surface lives *above* the whole shell, not inside the
+        // Scaffold body: it has to be able to cover the navigation bar while it
+        // expands. It is always mounted so the band's drag can drive it frame by
+        // frame.
         Positioned.fill(child: _PlayerLayer(controller: _player)),
       ],
     );
@@ -153,45 +189,45 @@ class _PlayerLayer extends StatelessWidget {
       builder: (context, constraints) => AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
-          final size = controller.size;
-          return IgnorePointer(
-            // At size 0 the layer is fully transparent and must not eat any
-            // gesture meant for the mini player or the tabs below.
-            ignoring: !controller.isModal,
-            child: Stack(
-              children: <Widget>[
-                // Scrim fading in fast, so the shell behind is already dimmed by
-                // the time the player has covered any of it.
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      color: Colors.black.withValues(
-                        alpha: (size / 0.15).clamp(0.0, 1.0) * 0.5,
-                      ),
+          // Nothing to lay out until the shell has measured the chrome, which
+          // happens in a post-frame callback after the first layout.
+          if (controller.surfaceHeight <= 0) {
+            return const SizedBox.shrink();
+          }
+
+          return Stack(
+            children: <Widget>[
+              // Scrim, dimming the shell behind. Fades in over `chromeFade` so
+              // the background is already darkened by the time the surface has
+              // covered any of it.
+              Positioned.fill(
+                child: IgnorePointer(
+                  // Transparent at rest, so it must not eat a single tap meant
+                  // for the band or the navigation bar beneath it.
+                  ignoring: !controller.isModal,
+                  child: ColoredBox(
+                    color: Colors.black.withValues(
+                      alpha: controller.chromeFade * 0.5,
                     ),
                   ),
                 ),
-                // Opacity ramp so the player is revealed over the first sliver
-                // of travel rather than popping in as a hard rectangle.
-                // The player is sized by the controller, so it is laid out as a
-                // bottom-anchored box rather than a DraggableScrollableSheet:
-                // the sheet contains no scrollable of its own any more (the
-                // queue moved behind a tab), so there is nothing for a
-                // DraggableScrollableController to drive.
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: PlayerSheetController.playerOpacity(size),
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: SizedBox(
-                        height: size * constraints.maxHeight,
-                        child: NowPlayingSheet(sheet: controller),
-                      ),
+              ),
+              // The surface itself: a bottom-anchored box whose height is the
+              // chrome plus however far the finger has dragged. At rest that is
+              // exactly the chrome, so its top edge is the band's top edge.
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    height: controller.surfaceHeight.clamp(
+                      0.0,
+                      constraints.maxHeight,
                     ),
+                    child: NowPlayingSheet(sheet: controller),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),

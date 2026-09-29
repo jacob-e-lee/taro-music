@@ -1,10 +1,11 @@
-﻿import 'package:audio_service/audio_service.dart';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:taro_music/app/taro_music_app.dart';
 import 'package:taro_music/features/player/application/webview_audio_handler.dart';
+import 'package:taro_music/features/player/application/webview_bridge.dart';
 import 'package:taro_music/features/player/application/providers.dart';
 import 'package:taro_music/features/player/presentation/now_playing_sheet.dart';
 import 'package:taro_music/features/player/presentation/player_sheet_controller.dart';
@@ -38,6 +39,14 @@ double _playerHeight(WidgetTester tester) => tester
           .first,
     )
     .height;
+
+/// The height the surface rests at when the player is collapsed.
+///
+/// Never zero now that the surface stands in for the bottom chrome, so "the
+/// player is closed" means "back down to the chrome", not "gone".
+double _collapsedHeight(WidgetTester tester) =>
+    tester.getSize(find.byType(NavigationBar)).height +
+    NowPlayingSheet.collapsedBarHeight;
 
 /// Loads a track and queues a second entry, without opening the player.
 Future<void> _loadTrack(WidgetTester tester) async {
@@ -82,6 +91,18 @@ Future<void> _peek(WidgetTester tester) async {
 }
 
 WebViewAudioHandler _handler() => WebViewAudioHandler();
+
+/// Feeds the bridge an event as the native side would.
+///
+/// The player widget cannot mount in a widget test — a platform view needs a
+/// real engine — so this seam is the only way to reach the event path that
+/// carries every playback update.
+///
+/// Careful: once an event has the handler reporting playback, the seek bar
+/// animates every frame and `pumpAndSettle` will not return. Pump with an
+/// explicit duration instead.
+void _emit(WebViewPlayerEvent event) =>
+    YouTubeWebViewBridge.instance.debugEmit(event);
 
 Widget _app({String? initialRoute}) => ProviderScope(
   overrides: [audioHandlerProvider.overrideWithValue(_handler())],
@@ -169,6 +190,12 @@ void main() {
         ),
       );
       await tester.pump();
+
+      // A second frame: the surface learns the chrome height in a post-frame
+      // callback, so it lays out one frame after the shell does. Sub-frame, and
+      // startup-only - but the assertions below are about what the surface
+      // draws, so they have to wait for it.
+      await tester.pumpAndSettle();
 
       // Mini player visible on Home tab
       expect(find.text('Test Song'), findsOneWidget);
@@ -359,7 +386,7 @@ void main() {
     // A decisive downward flick must dismiss, not spring back open.
     await tester.fling(find.text('NOW PLAYING'), const Offset(0, 300), 2000);
     await tester.pumpAndSettle();
-    expect(playerHeight(), lessThan(10));
+    expect(playerHeight(), closeTo(_collapsedHeight(tester), 1));
   });
 
   testWidgets('A downward drag past halfway minimises the player', (
@@ -379,7 +406,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(_playerHeight(tester), lessThan(10));
+    expect(_playerHeight(tester), closeTo(_collapsedHeight(tester), 1));
   });
 
   testWidgets('A small downward drag springs back open', (
@@ -459,7 +486,7 @@ void main() {
         .height;
 
     const screen = 600.0;
-    expect(playerHeight(), lessThan(1));
+    expect(playerHeight(), closeTo(_collapsedHeight(tester), 1));
 
     await tester.tap(find.text('Test Song'));
     await tester.pumpAndSettle();
@@ -479,7 +506,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final settled = playerHeight();
-    final collapsed = settled < screen * 0.1;
+    // "Collapsed" is now the chrome height, not near-zero: the surface stands in
+    // for the bottom chrome, so it rests at the chrome's height rather than 0.
+    final collapsed = (settled - _collapsedHeight(tester)).abs() < 2;
     final expanded = settled > screen * 0.9;
     expect(
       collapsed || expanded,
@@ -488,37 +517,23 @@ void main() {
     );
   });
 
-  test('The mini player fades gradually, tracking the finger', () {
-    const range = PlayerSheetController.chromeFadeRange;
+  group('the bottom band hand-off', () {
+    const max = 0.96;
+    // Total travel available on a 800px-tall screen, for the assertions below.
+    const travel = max * 800 - 140;
 
-    // At rest it is fully visible.
-    expect(PlayerSheetController.chromeOpacity(0, 0, 0.96), 1);
+    test('the navigation bar is fully visible at rest', () {
+      expect(PlayerSheetController.revealFor(0), 0);
+    });
 
-    // Mid-drag it dissolves in proportion to how far the finger has travelled,
-    // rather than vanishing: a value strictly between 0 and 1 is the whole
-    // point, because previously it hit zero within a couple of percent.
-    final mid = PlayerSheetController.chromeOpacity(0.4, range / 2, 0.96);
-    expect(mid, closeTo(0.5, 0.01));
-    expect(
-      PlayerSheetController.chromeOpacity(0.4, range / 4, 0.96),
-      closeTo(0.75, 0.01),
-    );
-
-    // Gone once the finger has travelled the full range.
-    expect(PlayerSheetController.chromeOpacity(0.4, range, 0.96), 0);
-    expect(PlayerSheetController.chromeOpacity(0.4, 0.5, 0.96), 0);
-  });
-
-  test('With no finger down the mini player tracks the reveal', () {
-    // dragFraction 0 means we are not dragging, so the bar follows how much of
-    // the player is showing. This is what keeps it hidden while the player is
-    // open and brings it back as the player closes.
-    expect(PlayerSheetController.chromeOpacity(0, 0, 0.96), 1);
-    expect(PlayerSheetController.chromeOpacity(0.96, 0, 0.96), 0);
-    expect(
-      PlayerSheetController.chromeOpacity(0.48, 0, 0.96),
-      closeTo(0.5, 0.01),
-    );
+    test('the bar is gone well before the player is meaningfully open', () {
+      // `chromeFade` is a separate, much faster curve than `reveal`: the
+      // navigation bar has to be out of the way before the player's own bottom
+      // chrome needs that space, so it cannot ride the content's arrival.
+      const fraction = PlayerSheetController.chromeFadeFraction;
+      expect(travel * fraction, lessThan(travel * 0.25));
+      expect(travel * fraction, greaterThan(0));
+    });
   });
 
   testWidgets('The tab bar clears the system navigation bar', (
@@ -546,23 +561,19 @@ void main() {
   });
 
   test('The reveal axis holds content back until the player is open', () {
-    const max = 0.96;
-
-    // Nothing is revealed while collapsed, and the eased form lags the raw
-    // reveal so the controls and tabs do not appear the instant the sheet does.
-    expect(PlayerSheetController.revealFor(0, max), 0);
-    expect(PlayerSheetController.revealEaseFor(0, max), 0);
+    // `reveal` is now 0..1 progress rather than a fraction of a gained size,
+    // and it is 0 at the collapsed band - which is the whole point of the
+    // merge: nothing of the player's own chrome shows until it starts opening.
+    expect(PlayerSheetController.revealFor(0), 0);
+    expect(PlayerSheetController.revealEaseFor(0), 0);
 
     // A barely-open player reveals very little.
-    expect(
-      PlayerSheetController.revealFor(max * 0.3, max),
-      closeTo(0.3, 0.001),
-    );
-    expect(PlayerSheetController.revealEaseFor(max * 0.3, max), lessThan(0.6));
+    expect(PlayerSheetController.revealFor(0.3), closeTo(0.3, 0.001));
+    expect(PlayerSheetController.revealEaseFor(0.3), lessThan(0.6));
 
     // Past the ease fraction it is fully in.
-    expect(PlayerSheetController.revealEaseFor(max * 0.7, max), 1);
-    expect(PlayerSheetController.revealEaseFor(max, max), 1);
+    expect(PlayerSheetController.revealEaseFor(0.7), 1);
+    expect(PlayerSheetController.revealEaseFor(1), 1);
   });
 
   testWidgets('Dismissing returns the mini player to the bottom', (
@@ -598,7 +609,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // The player is gone...
-    expect(_playerHeight(tester), lessThan(10));
+    expect(_playerHeight(tester), closeTo(_collapsedHeight(tester), 1));
 
     // ...and the mini player is back down at the bottom, not stranded part way
     // up the screen.
@@ -637,8 +648,302 @@ void main() {
       _app(initialRoute: '/playlist?id=my_playlist_123&title=Summer+Hits'),
     );
     await tester.pump();
+    // The player surface measures the chrome in a post-frame callback, so give
+    // it the frame it needs to settle before asserting on the rendered tree.
+    await tester.pumpAndSettle();
 
     expect(find.text('Summer Hits'), findsWidgets);
     expect(find.text('Playlist ID: my_playlist_123'), findsOneWidget);
+  });
+
+  group('a drag can be turned around mid-gesture', () {
+    testWidgets('an upward drag can be pulled back down before releasing', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _loadTrack(tester);
+      await tester.pumpAndSettle();
+
+      final rest = _collapsedHeight(tester);
+      expect(_playerHeight(tester), closeTo(rest, 1));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Test Song')),
+      );
+      await tester.pump();
+      // A nudge that crosses touch slop, then the move that actually counts -
+      // the recogniser swallows the offset that triggered it.
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, -120));
+      await tester.pump();
+      expect(_playerHeight(tester), greaterThan(rest + 80));
+
+      // The same gesture turns around without lifting off, and overshoots so
+      // the end of the travel is reached whatever the slop accounted for...
+      await gesture.moveBy(const Offset(0, 200));
+      await tester.pump();
+
+      // ...and the surface follows it all the way back down. Under the old
+      // model the direction was latched when the drag began, so an upward drag
+      // discarded every downward delta and the surface stayed stuck near the
+      // top until the finger was lifted.
+      expect(_playerHeight(tester), closeTo(rest, 2));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // Released back at the chrome, so it settles closed rather than open.
+      expect(_playerHeight(tester), closeTo(rest, 1));
+    });
+
+    testWidgets('a downward drag can be pushed back up before releasing', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(_playerApp());
+      await _openPlayer(tester);
+
+      final open = _playerHeight(tester);
+      expect(open, greaterThan(500));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('NOW PLAYING')),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 150));
+      await tester.pump();
+      expect(_playerHeight(tester), lessThan(open - 100));
+
+      // Reversing has to work in this direction too: a downward drag must not
+      // discard the upward deltas once it is under way.
+      await gesture.moveBy(const Offset(0, -250));
+      await tester.pump();
+      expect(_playerHeight(tester), closeTo(open, 2));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // Let go at the top, so it stays open.
+      expect(_playerHeight(tester), closeTo(open, 1));
+    });
+  });
+
+  testWidgets('the surface top edge tracks the finger exactly 1:1', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _loadTrack(tester);
+    await tester.pumpAndSettle();
+
+    // At rest the surface is exactly the chrome tall: the collapsed band plus
+    // the navigation bar. Its top edge is therefore the band's top edge, and
+    // the band *is* the player rather than a separate widget that hands over.
+    final sheet = find.byType(NowPlayingSheet);
+    final navBar = find.byType(NavigationBar);
+    expect(tester.getTopLeft(sheet).dy, closeTo(tester.getTopLeft(navBar).dy - NowPlayingSheet.collapsedBarHeight, 1));
+
+    // Nothing is modal at rest, so the navigation bar underneath keeps taking
+    // taps. This is the regression guard for the surface spanning the chrome
+    // band while the player is collapsed: the surface's own box covers the nav
+    // bar's band too, and must not swallow it.
+    expect(find.text('Home'), findsOneWidget);
+    expect(
+      find.widgetWithText(NavigationDestination, 'Home'),
+      findsOneWidget,
+    );
+
+    final before = tester.getTopLeft(sheet).dy;
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Test Song')),
+    );
+    await tester.pump();
+    // Two steps: the first crosses touch slop and only starts the recognizer,
+    // the second produces the update that actually moves the surface.
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -100));
+    await tester.pump();
+
+    // Strictly 1:1 with the drag the surface actually receives: the second move
+    // travelled 100px and the top edge moved 100px. The first 20px went to the
+    // gesture recogniser's touch slop and never reached the surface at all.
+    //
+    // The old model applied a 0.55 gain, so 100px of drag produced far more
+    // than 100px of travel - this is the assertion that would have caught it.
+    expect(before - tester.getTopLeft(sheet).dy, closeTo(100, 2));
+
+    // And the artwork is still part-grown, not snapped to its hero size.
+    final art = tester.getSize(
+      find
+          .descendant(
+            of: find.byType(NowPlayingSheet),
+            matching: find.byType(Icon),
+          )
+          .first,
+    );
+    expect(art.width, greaterThan(0));
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('the surface returns to the chrome height when dismissed', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openPlayer(tester);
+
+    final sheet = find.byType(NowPlayingSheet);
+    final navBar = find.byType(NavigationBar);
+    final openTop = tester.getTopLeft(sheet).dy;
+    expect(openTop, lessThan(tester.getTopLeft(navBar).dy - 50));
+
+    // Close via the header's button, the way a user would.
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    // Back to exactly where the chrome was, not merely "small" - the surface is
+    // never zero-height now, so the old `lessThan(10)` assertion no longer means
+    // anything. Compared as a top edge: the surface is bottom-anchored, so its
+    // top sits one chrome-height above the bottom of the screen.
+    final screenHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(
+      tester.getTopLeft(sheet).dy,
+      closeTo(screenHeight - _collapsedHeight(tester), 1),
+    );
+  });
+
+  // --------------------------------------------------- progress reporting
+  //
+  // The engine's status frames are the only thing that ever moved the bar, and
+  // they were never arriving. These pin down what the bar does with them, and
+  // that it keeps time without them.
+
+  testWidgets('the seek bar follows the engine without being touched', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openPlayer(tester);
+
+    // The engine starts playing and reports where it is. Nothing touches the UI
+    // in between: the bar has to move on its own.
+    _emit(const PlayerStateChanged(1));
+    await tester.pump();
+    _emit(const PlayerInfo(currentTime: 42, duration: 180));
+    await tester.pump();
+
+    expect(find.text('0:42'), findsOneWidget);
+    // The engine's duration fills in a track the queue metadata left blank,
+    // which is what makes the slider usable rather than inert.
+    expect(find.text('3:00'), findsWidgets);
+    expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNotNull);
+  });
+
+  testWidgets('pausing holds the position instead of snapping to zero', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openPlayer(tester);
+
+    _emit(const PlayerStateChanged(1));
+    await tester.pump();
+    _emit(const PlayerInfo(currentTime: 42, duration: 180));
+    await tester.pump();
+
+    _emit(const PlayerStateChanged(2));
+    await tester.pump();
+
+    // A pause does not seek: the music carries on from 0:42 when it resumes, so
+    // the bar has to stay at 0:42 rather than dropping to 0:00.
+    expect(find.text('0:42'), findsOneWidget);
+    expect(find.text('0:00'), findsNothing);
+  });
+
+  testWidgets('a pause cannot zero a position it never anchored', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openPlayer(tester);
+
+    // Deliberately *no* status frame, which is the state the app actually
+    // shipped in: the anchor was still the zero written when the track started,
+    // and a paused state reports that anchor verbatim.
+    _emit(const PlayerStateChanged(1));
+    await tester.pump();
+    expect(_lastHandler!.playbackState.value.playing, isTrue);
+
+    // `PlaybackState.position` extrapolates on `package:clock`'s clock, which
+    // `testWidgets` backs with the binding's fake clock — so pumping a duration
+    // is what moves it, and this stays exact rather than racing a real delay.
+    await tester.pump(const Duration(milliseconds: 150));
+
+    _emit(const PlayerStateChanged(2));
+    await tester.pump();
+
+    final position = _lastHandler!.playbackState.value.position;
+    expect(position, greaterThan(Duration.zero));
+    expect(position, lessThan(const Duration(seconds: 2)));
+  });
+
+  testWidgets('the bar advances on its own while the engine is playing', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openPlayer(tester);
+
+    _emit(const PlayerStateChanged(1));
+    await tester.pump();
+    _emit(const PlayerInfo(currentTime: 10, duration: 180));
+    await tester.pump();
+    expect(_lastHandler!.playbackState.value.playing, isTrue);
+
+    final before = tester.widget<Slider>(find.byType(Slider)).value;
+
+    // No frame from the engine and no interaction. Just a duration pumped,
+    // which moves the binding's clock and draws the frame the bar's own clock
+    // ticks on.
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump();
+
+    expect(
+      tester.widget<Slider>(find.byType(Slider)).value,
+      greaterThan(before),
+    );
+  });
+
+  testWidgets('a status frame in step with the clock does not republish state', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openPlayer(tester);
+    final handler = _lastHandler!;
+
+    _emit(const PlayerStateChanged(1));
+    await tester.pump();
+    final anchored = handler.playbackState.value;
+
+    // A frame that agrees with the extrapolation is what a healthy engine sends
+    // several times a second. Acting on it would rewrite the notification every
+    // time, to tell the platform what it is already extrapolating.
+    _emit(
+      PlayerInfo(
+        currentTime:
+            anchored.position.inMicroseconds / Duration.microsecondsPerSecond,
+      ),
+    );
+    await tester.pump();
+    expect(identical(handler.playbackState.value, anchored), isTrue);
+
+    // A frame that has genuinely diverged — a stall, or a seek issued from
+    // inside the page — does re-anchor.
+    _emit(const PlayerInfo(currentTime: 90));
+    await tester.pump();
+    expect(
+      handler.playbackState.value.position.inMilliseconds,
+      closeTo(const Duration(seconds: 90).inMilliseconds, 250),
+    );
   });
 }
