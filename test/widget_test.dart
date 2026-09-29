@@ -81,10 +81,17 @@ Future<void> _peek(WidgetTester tester) async {
     tester.getCenter(find.text('Queue')),
   );
   await tester.pump();
+  // Far enough to complete the morph on any screen height: the bar's travel
+  // is 1:1 with the finger now, so the pull has to cover the whole distance
+  // rather than a fixed fraction of it.
+  final screenHeight =
+      tester.view.physicalSize.height / tester.view.devicePixelRatio;
+  var dragged = 0.0;
   // Many small steps with a frame between each, the way a real finger drags.
-  for (var i = 0; i < 8; i++) {
-    await gesture.moveBy(const Offset(0, -30));
+  while (dragged < screenHeight) {
+    await gesture.moveBy(const Offset(0, -40));
     await tester.pump();
+    dragged += 40;
   }
   await gesture.up();
   await tester.pumpAndSettle();
@@ -321,6 +328,80 @@ void main() {
     await _peek(tester);
 
     expect(find.textContaining('Up Next'), findsOneWidget);
+  });
+
+  testWidgets('Dragging the tab bar up tracks the finger exactly 1:1', (
+    WidgetTester tester,
+  ) async {
+    await _openPlayer(tester);
+
+    final barTop = tester.getTopLeft(find.text('Queue')).dy;
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Queue')),
+    );
+    await tester.pump();
+    // Two steps: the first crosses touch slop and only starts the recognizer,
+    // the second produces the update that actually moves the bar.
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -100));
+    await tester.pump();
+
+    // The finger moved up 100px and the bar - the handle the panel's top edge
+    // hangs off - moved up 100px too. The old mapping divided by a fixed 0.35
+    // of the screen height while the bar's real travel is closer to 0.75 of
+    // it, so this delta used to run roughly twice as far as the finger.
+    expect(
+      barTop - tester.getTopLeft(find.text('Queue')).dy,
+      closeTo(100, 2),
+    );
+
+    // Keep pulling until the whole travel is covered, then release: past the
+    // settle fraction, so it commits to the peek state.
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(0, -60));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Up Next'), findsOneWidget);
+  });
+
+  testWidgets('Tapping a tab opens its panel from the full player', (
+    WidgetTester tester,
+  ) async {
+    await _openPlayer(tester);
+
+    // Full player: no panel content is on screen yet.
+    expect(find.textContaining('Up Next'), findsNothing);
+
+    // Queue is already the selected tab, so this tap is pure "open".
+    await tester.tap(find.text('Queue'));
+    await tester.pumpAndSettle();
+
+    // The tap morphed the player to peek and revealed the queue panel.
+    expect(find.textContaining('Up Next'), findsOneWidget);
+  });
+
+  testWidgets('Tapping a tab opens to the tab that was tapped', (
+    WidgetTester tester,
+  ) async {
+    await _openPlayer(tester);
+
+    await tester.tap(find.text('Lyrics'));
+    await tester.pumpAndSettle();
+
+    // The tap opened the panel *and* honoured the selection: lyrics is on
+    // screen, not the queue.
+    expect(find.text('Lyrics unavailable'), findsOneWidget);
+    expect(find.textContaining('Up Next'), findsNothing);
+
+    // Tapping the other tab while peeking switches the open panel.
+    await tester.tap(find.text('Queue'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Up Next'), findsOneWidget);
+    expect(find.text('Lyrics unavailable'), findsNothing);
   });
 
   testWidgets('The lyrics tab shows the unavailable state', (
@@ -633,11 +714,10 @@ void main() {
     expect(find.text('Queue').hitTestable(), findsOneWidget);
     expect(find.text('Lyrics').hitTestable(), findsOneWidget);
 
-    // Tapping a tab still switches the content once the content region is
-    // revealed (the tab body only exists in the peek state).
+    // And a tap on a tab does double duty: it selects the tab and opens its
+    // panel, so no drag is needed to reach the content once the bar is live.
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
-    await _peek(tester);
     expect(find.text('Lyrics unavailable').hitTestable(), findsOneWidget);
   });
 

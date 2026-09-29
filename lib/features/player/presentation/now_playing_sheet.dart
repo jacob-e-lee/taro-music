@@ -235,6 +235,16 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
                             distance: _tabBarHeight,
                             child: PlayerTabBar(
                               controller: sheet,
+                              // Measured from this layout: the bar sits right
+                              // under the player body, so the morph carries it
+                              // exactly as far as the body shrinks. Handing the
+                              // real distance over is what lets the bar's drag
+                              // track the finger 1:1 instead of racing across
+                              // a fixed fraction of the screen height.
+                              morphTravelPx: math.max(
+                                1.0,
+                                fullPlayerHeight - _miniStripHeight,
+                              ),
                               onTabSelected: sheet.selectTab,
                               animateMorph: _animateMorph,
                             ),

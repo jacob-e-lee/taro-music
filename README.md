@@ -28,8 +28,9 @@ would otherwise pause audio the moment the screen locks.
 - **Now-playing sheet** that morphs continuously from the mini-player band into
   the full player with one drag gesture; the seek bar re-reads the engine clock
   once per display frame, so motion is smooth without polling the WebView.
-- **Queue and Lyrics tabs** in the full player (the lyrics source is not
-  implemented yet, so that tab currently renders an empty state).
+- **Queue and Lyrics tabs** in the full player — tapping one opens that
+  panel (the lyrics source is not implemented yet, so the lyrics panel
+  currently renders an empty state).
 - **Deep links** — `/track` and `/playlist` routes open shared content directly.
 - Exponential-backoff retries across every provider, with per-attempt failures
   preserved so the UI can say exactly what was tried.

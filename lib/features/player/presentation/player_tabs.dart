@@ -10,27 +10,45 @@ import 'player_sheet_controller.dart';
 /// affordance under their finger in both states: in the full player it sits at
 /// the bottom, and in the peek state it has docked itself under the mini strip.
 /// Keeping it in one place is what makes that hand-off continuous.
+///
+/// A tap and a drag mean different things here: a drag morphs the player, and
+/// a tap selects a tab and springs the morph open, so clicking Queue or Lyrics
+/// opens that panel directly instead of only moving the highlight.
 class PlayerTabBar extends StatelessWidget {
   const PlayerTabBar({
     super.key,
     required this.controller,
+    required this.morphTravelPx,
     required this.onTabSelected,
     required this.animateMorph,
   });
 
   final PlayerSheetController controller;
+
+  /// Pixel distance the tab bar - and the panel's top edge, which sits
+  /// directly below it - travels across the full morph from full player to
+  /// peek.
+  ///
+  /// Measured by the sheet from its own layout: it is however far the player
+  /// body shrinks, not a fraction of the screen. The drag divides by it so
+  /// one pixel of finger is one pixel of movement.
+  final double morphTravelPx;
+
   final ValueChanged<PlayerTab> onTabSelected;
   final void Function(double target) animateMorph;
 
-  /// How far a drag must travel to complete the whole morph. Short, because
-  /// the content it reveals is large and should not need a long pull.
+  /// Release velocity (px/s) past which the morph commits to its end
+  /// regardless of how far the finger actually travelled.
   static const double _flingThreshold = 300;
+
+  /// Fraction of the travel past which letting go commits to that end.
   static const double _settleFraction = 0.5;
 
-  void _onDragUpdate(DragUpdateDetails details, double travel) {
-    // Dragging up pushes towards peek; the divisor is the travel needed for a
-    // full morph, so the bar tracks the finger proportionally.
-    final delta = -details.delta.dy / travel;
+  void _onDragUpdate(DragUpdateDetails details) {
+    // Dragging up pushes towards peek. The delta is divided by the distance
+    // the bar travels over the whole morph, so the panel opens strictly 1:1
+    // with the finger instead of racing ahead of it.
+    final delta = -details.delta.dy / morphTravelPx;
     controller.setMorph(controller.morph + delta);
   }
 
@@ -39,8 +57,7 @@ class PlayerTabBar extends StatelessWidget {
     final theme = Theme.of(context);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: (details) =>
-          _onDragUpdate(details, MediaQuery.sizeOf(context).height * 0.35),
+      onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: (details) {
         final velocity = details.primaryVelocity ?? 0;
         final flickedUp = velocity < -_flingThreshold;
@@ -68,7 +85,15 @@ class PlayerTabBar extends StatelessWidget {
               _TabButton(
                 tab: tab,
                 selected: controller.tab == tab,
-                onTap: () => onTabSelected(tab),
+                // Select the tab *and* reveal it: the tab body only exists in
+                // the peek state, so a tap that only selected would change
+                // the highlight with nothing to show for it. Once already
+                // peeking, the morph call settles where it is and the tap
+                // simply switches which panel is open.
+                onTap: () {
+                  onTabSelected(tab);
+                  animateMorph(1.0);
+                },
               ),
           ],
         ),
