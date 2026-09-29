@@ -34,13 +34,32 @@ class QueueTab extends StatelessWidget {
             final currentIndex = state.queueIndex ?? 0;
 
             if (queue.isEmpty) {
-              return const Center(child: Text('Queue is empty'));
+              // Still a scroll view, and an always-draggable one: the panel
+              // closes from a swipe-down at the top of its body, and this
+              // empty state has no scrollable content to be at the top of -
+              // the drag must still reach a scroll view to report the
+              // under-scroll the gesture is read from.
+              return CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: <Widget>[
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: const Center(child: Text('Queue is empty')),
+                  ),
+                ],
+              );
             }
 
             // A box, not a bare sliver: this lives inside a Column, and it
             // scrolls on its own controller so queue scrolling never competes
             // with the player's dismiss gesture.
+            //
+            // Always-draggable even when the queue does not overflow: the
+            // swipe-down-to-leave-panel gesture is this view reporting an
+            // under-scroll at its top, and a short queue would otherwise
+            // reject the drag outright.
             return CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               slivers: <Widget>[
                 SliverToBoxAdapter(
                   child: Padding(

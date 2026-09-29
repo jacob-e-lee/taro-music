@@ -2,6 +2,7 @@
 import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,6 +50,34 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
   /// Drives the full-player <-> peek morph. The value itself lives on the
   /// controller so the tab bar can drag it directly.
   late final AnimationController _morphAnimation;
+
+  /// How far the panel's top edge travels across a full morph, in pixels.
+  ///
+  /// The same measurement handed to the tab bar, cached so the body's
+  /// under-scroll handler divides by the number the bar's own drag uses -
+  /// two gestures writing into one scalar must agree on its scale.
+  double _morphTravelPx = 1;
+
+  /// Whether the gesture in progress took over the morph from a pull-down
+  /// inside the panel body.
+  ///
+  /// Armed by the first under-scroll, or by the body's own pull recognizer;
+  /// cleared when that gesture ends, or when the panel reaches morph 0 and the
+  /// body unmounts beneath it - so an ordinary scroll never gets a release it
+  /// did not ask for.
+  bool _panelPulling = false;
+
+  /// Whether the panel's scroll view is at the top of its content.
+  ///
+  /// The "back at the top" gate, tracked from the body's scroll metrics. The
+  /// overscroll path gets this for free (a top under-scroll is the only way one
+  /// is reported), but the pull recognizer has to ask *before* it claims a
+  /// gesture, so it is kept here rather than inferred.
+  bool _bodyAtTop = true;
+
+  /// The tab whose scroll view `_bodyAtTop` describes, so a swap starts at the
+  /// top without waiting for the new view's first scroll notification.
+  PlayerTab? _lastTab;
 
   @override
   void initState() {
@@ -185,6 +214,22 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
           0.0,
           usable - playerHeight - tabBarHeight,
         );
+        // Cached for the body's under-scroll handler: the same travel the
+        // bar is handed just below, so both gestures scale finger pixels
+        // into morph identically.
+        final morphTravelPx = math.max(
+          1.0,
+          fullPlayerHeight - _miniStripHeight,
+        );
+        _morphTravelPx = morphTravelPx;
+
+        // The gate only describes a scroll view that exists: reset it when the
+        // body unmounts and when the tab is swapped, so neither can inherit a
+        // stale "not at the top" from a view that is gone.
+        if (morph <= 0.001 || _lastTab != sheet.tab) {
+          _bodyAtTop = true;
+          _lastTab = sheet.tab;
+        }
 
         return Align(
           // Top-anchored within the surface: the band's top edge *is* the
@@ -241,10 +286,7 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
                               // real distance over is what lets the bar's drag
                               // track the finger 1:1 instead of racing across
                               // a fixed fraction of the screen height.
-                              morphTravelPx: math.max(
-                                1.0,
-                                fullPlayerHeight - _miniStripHeight,
-                              ),
+                              morphTravelPx: morphTravelPx,
                               onTabSelected: sheet.selectTab,
                               animateMorph: _animateMorph,
                             ),
@@ -254,15 +296,59 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
                           height: tabContentHeight,
                           child: morph <= 0.001
                               ? const SizedBox.shrink()
-                              : Opacity(
-                                  opacity: morph.clamp(0.0, 1.0),
-                                  child: switch (sheet.tab) {
-                                    PlayerTab.queue => QueueTab(handler: handler),
-                                    PlayerTab.lyrics => LyricsPane(
-                                      trackId:
-                                          Track.fromExtras(item.extras)?.id ?? '',
-                                    ),
+                              : RawGestureDetector(
+                                  // The body's own pull, sitting *above* the
+                                  // scroll view in the hit path so it is the
+                                  // first to be offered the pointer.
+                                  //
+                                  // The overscroll listener below only sees
+                                  // rejected distance, which stops the moment
+                                  // the finger comes back up - so a drag that
+                                  // turned around half way used to hand the
+                                  // gesture to the list and freeze the morph.
+                                  // This recognizer claims the gesture up front
+                                  // and maps both directions into the morph.
+                                  behavior: HitTestBehavior.translucent,
+                                  gestures: <Type, GestureRecognizerFactory>{
+                                    _PanelPullRecognizer:
+                                        GestureRecognizerFactoryWithHandlers<
+                                          _PanelPullRecognizer
+                                        >(
+                                          _PanelPullRecognizer.new,
+                                          (recognizer) {
+                                            recognizer
+                                              ..canPull = _canPullPanel
+                                              ..onStart = _onPanelDragStart
+                                              ..onUpdate = _onPanelDragUpdate
+                                              ..onEnd = _onPanelDragEnd;
+                                          },
+                                        ),
                                   },
+                                  child: NotificationListener<
+                                    ScrollNotification
+                                  >(
+                                    // Catches what the recognizer does not: a
+                                    // pull that began away from the top, where
+                                    // the scroll view legitimately owns the
+                                    // pointer and only gives the rejected
+                                    // distance back as an under-scroll.
+                                    onNotification:
+                                        _onPanelScrollNotification,
+                                    child: Opacity(
+                                      opacity: morph.clamp(0.0, 1.0),
+                                      child: switch (sheet.tab) {
+                                        PlayerTab.queue => QueueTab(
+                                          handler: handler,
+                                        ),
+                                        PlayerTab.lyrics => LyricsPane(
+                                          trackId:
+                                              Track.fromExtras(item.extras)
+                                                  ?.id ??
+                                              '',
+                                        ),
+                                      },
+                                    ),
+                                  ),
                                 ),
                         ),
                       ],
@@ -381,6 +467,126 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
     );
   }
 
+  /// Lets a swipe-down anywhere in the panel body leave it.
+  ///
+  /// Whether the panel body may claim a downward drag right now: the panel
+  /// exists and its scroll view is at the top.
+  bool _canPullPanel() => _bodyAtTop && widget.sheet.morph > 0.001;
+
+  void _onPanelDragStart(DragStartDetails details) {
+    _morphAnimation.stop();
+    _panelPulling = true;
+  }
+
+  /// Both directions, at both ends - the same rule the surface's own drag uses,
+  /// so a pull that turns around half way drags the morph back up instead of
+  /// handing the gesture to the list.
+  void _onPanelDragUpdate(DragUpdateDetails details) {
+    final dy = details.delta.dy;
+    if (dy == 0) return;
+    widget.sheet.setMorph(widget.sheet.morph - dy / _morphTravelPx);
+    // Hit zero: the body is about to unmount, so settle the flag here rather
+    // than waiting for an end that can no longer arrive.
+    if (widget.sheet.morph <= 0.001) _panelPulling = false;
+  }
+
+  void _onPanelDragEnd(DragEndDetails details) {
+    _settlePanelPull(details.primaryVelocity ?? 0);
+  }
+
+  /// Decides which end a finished panel pull springs to.
+  ///
+  /// One rule, shared by the recognizer and the overscroll path below, so the
+  /// two ways of pulling the panel out cannot disagree about where it lands.
+  void _settlePanelPull(double velocity) {
+    _panelPulling = false;
+    final flickedUp = velocity < -PlayerTabBar.flingThreshold;
+    final flickedDown = velocity > PlayerTabBar.flingThreshold;
+    final movedFar = widget.sheet.morph > PlayerTabBar.settleFraction;
+    _animateMorph(flickedUp || (movedFar && !flickedDown) ? 1.0 : 0.0);
+  }
+
+  /// Keeps the top-of-list gate in step with the body's scroll view.
+  void _noteScrollMetrics(ScrollNotification notification) {
+    final metrics = notification.metrics;
+    _bodyAtTop = metrics.pixels <= metrics.minScrollExtent + _kTopEpsilonPx;
+  }
+
+  /// Slack allowed on the "at the top" comparison, to absorb the sub-pixel
+  /// rounding a scroll view reports after a fling lands on its boundary.
+  static const double _kTopEpsilonPx = 0.5;
+
+  /// The catch-all for pulls the recognizer cannot own: one that began away
+  /// from the top, where the scroll view legitimately holds the pointer and
+  /// only hands the rejected distance back as an under-scroll.
+  ///
+  /// The body is a scroll view, so when it is at the top of its content and
+  /// the finger keeps pulling down, the list cannot move: it hands back the
+  /// rejected distance as an [OverscrollNotification] whose `overscroll` is
+  /// negative. That distance *is* finger travel, so it writes into the morph
+  /// exactly as the tab bar's drag does - divided by the travel, 1:1 - and it
+  /// only ever fires once the list is already at its top, which is the
+  /// "back at the top" gate for free. Overscroll at the bottom (positive)
+  /// belongs to the list's own bounce and is left alone.
+  ///
+  /// On release, the same rule as the bar decides: a flick back up, or more
+  /// than half the travel still held, returns to the full player; anything
+  /// less springs back to the panel. Velocity arrives on the scroll end's
+  /// `dragDetails`, which the test suite's zero-timestamp events make zero -
+  /// so position decides there, as it does for the bar.
+  ///
+  /// One limitation worth naming: this rides the clamping physics' rejected
+  /// distance, so on the bouncing (iOS/macOS) physics - which swallow the
+  /// drag into negative pixels instead of reporting it rejected - the gesture
+  /// does not fire.
+  bool _onPanelScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      // A fresh gesture begins: nothing left over to settle from the last.
+      _panelPulling = false;
+      _noteScrollMetrics(notification);
+      return false;
+    }
+
+    if (notification is OverscrollNotification) {
+      final overscroll = notification.overscroll;
+      // Only the under-scroll at the top counts. The morph-0 guard is for
+      // the notification arriving in the same instant the body unmounts:
+      // re-arming after that would strand the flag with nobody to clear it.
+      if (overscroll >= 0 || widget.sheet.morph <= 0.001) return false;
+      if (!_panelPulling) {
+        _panelPulling = true;
+        // The finger has taken the morph over from any running animation.
+        _morphAnimation.stop();
+      }
+      widget.sheet.setMorph(widget.sheet.morph + overscroll / _morphTravelPx);
+      // Hit zero: the body is about to unmount, so settle the flag's fate
+      // here rather than waiting for a scroll end that can no longer arrive.
+      if (widget.sheet.morph <= 0.001) _panelPulling = false;
+      return false;
+    }
+
+    if (notification is ScrollUpdateNotification) {
+      _noteScrollMetrics(notification);
+      // The finger came back off the top, so the list is scrolling again and
+      // the under-scroll has stopped arriving. Without this the morph would
+      // freeze wherever the reversal caught it.
+      if (_panelPulling && notification.scrollDelta != null) {
+        _settlePanelPull(0);
+      }
+      return false;
+    }
+
+    if (notification is ScrollEndNotification) {
+      _noteScrollMetrics(notification);
+      if (_panelPulling) {
+        _settlePanelPull(notification.dragDetails?.primaryVelocity ?? 0);
+      }
+      return false;
+    }
+
+    return false;
+  }
+
   static const double _tabBarHeight = 58;
   static const double _miniStripHeight = 64;
 
@@ -396,6 +602,41 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
   /// navigation bar beneath rather than as a floating pill.
   static const double _topRadius = 24;
 }
+
+/// Claims a downward drag anywhere in the panel body, so it can be left without
+/// reaching up to the tab bar - and keeps it, so the pull can be reversed.
+///
+/// The scroll view's own drag recognizer would otherwise win: it accepts at the
+/// touch slop (18px), and the arena is closed on pointer-down, so the first
+/// member to resolve `accepted` takes the gesture outright. Accepting earlier
+/// than it and *only* for a downward pull while the list is at its top is what
+/// makes the difference without taking the list's ordinary scrolling away.
+///
+/// `globalDistanceMoved` is signed - negative is upward - which is what lets
+/// this refuse an upward swipe at the top and leave it to scroll the list.
+class _PanelPullRecognizer extends VerticalDragGestureRecognizer {
+  /// Whether the body is in a state where a pull may be claimed. Consulted per
+  /// pointer move, so a gesture that starts at the top and scrolls into the
+  /// list simply stops being accepted.
+  bool Function()? canPull;
+
+  @override
+  String get debugDescription => 'panel pull';
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) {
+    if (canPull?.call() != true) return false;
+    return globalDistanceMoved > _kPanelPullAcceptPx;
+  }
+}
+
+/// Deliberately well under the 18px touch slop, so this recognizer resolves
+/// before the scroll view's does. Large enough that a tap on a queue row - or
+/// the long-press that starts a reorder - never reaches it.
+const double _kPanelPullAcceptPx = 8;
 
 /// The painted fill of the surface: background, shadow, and top corners.
 ///

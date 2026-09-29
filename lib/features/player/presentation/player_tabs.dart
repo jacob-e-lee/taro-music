@@ -39,10 +39,17 @@ class PlayerTabBar extends StatelessWidget {
 
   /// Release velocity (px/s) past which the morph commits to its end
   /// regardless of how far the finger actually travelled.
-  static const double _flingThreshold = 300;
+  ///
+  /// Public because the panel body's swipe-down release settles by the same
+  /// rule: two ends of one interaction must not disagree about what a flick
+  /// means.
+  static const double flingThreshold = 300;
 
   /// Fraction of the travel past which letting go commits to that end.
-  static const double _settleFraction = 0.5;
+  ///
+  /// Shared with the panel body's release for the same reason as
+  /// [flingThreshold].
+  static const double settleFraction = 0.5;
 
   void _onDragUpdate(DragUpdateDetails details) {
     // Dragging up pushes towards peek. The delta is divided by the distance
@@ -60,9 +67,9 @@ class PlayerTabBar extends StatelessWidget {
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: (details) {
         final velocity = details.primaryVelocity ?? 0;
-        final flickedUp = velocity < -_flingThreshold;
-        final flickedDown = velocity > _flingThreshold;
-        final movedFar = controller.morph > _settleFraction;
+        final flickedUp = velocity < -flingThreshold;
+        final flickedDown = velocity > flingThreshold;
+        final movedFar = controller.morph > settleFraction;
         final target = flickedUp || (movedFar && !flickedDown) ? 1.0 : 0.0;
         animateMorph(target);
       },
@@ -70,7 +77,7 @@ class PlayerTabBar extends StatelessWidget {
       // go back. Snapping to 0 here would yank the player out from under them
       // mid-drag, so settle to whichever end is nearer instead.
       onVerticalDragCancel: () =>
-          animateMorph(controller.morph > _settleFraction ? 1.0 : 0.0),
+          animateMorph(controller.morph > settleFraction ? 1.0 : 0.0),
       child: Container(
         padding: const EdgeInsets.only(top: 6, bottom: 4),
         decoration: BoxDecoration(
@@ -142,6 +149,23 @@ class _TabButton extends StatelessWidget {
   }
 }
 
+/// A panel body with no scrolling content of its own.
+///
+/// Still a scroll view: the panel closes from a swipe-down at the top of its
+/// body, and that pull is read from the body's own scroll view reporting the
+/// distance it could not scroll - a bare [Center] never sees one. The
+/// always-scrollable physics matter on top of that: with nothing to overflow,
+/// the default physics refuse the drag outright, before it can report
+/// anything.
+Widget _staticPane(Widget child) {
+  return CustomScrollView(
+    physics: const AlwaysScrollableScrollPhysics(),
+    slivers: <Widget>[
+      SliverFillRemaining(hasScrollBody: false, child: child),
+    ],
+  );
+}
+
 /// The Lyrics tab body.
 ///
 /// UI-only: the backing lyrics source reports "unavailable" today, so this
@@ -158,7 +182,9 @@ class LyricsPane extends ConsumerWidget {
     final result = ref.watch(lyricsProvider(trackId));
 
     return result.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => _staticPane(
+        const Center(child: CircularProgressIndicator()),
+      ),
       error: (error, _) => _Message(
         icon: Icons.cloud_off,
         title: 'Could not load lyrics',
@@ -166,6 +192,11 @@ class LyricsPane extends ConsumerWidget {
       ),
       data: (data) => switch (data) {
         LyricsLoaded(:final lyrics) when !lyrics.isEmpty => ListView.builder(
+          // Always draggable, even when the lyrics fit without scrolling:
+          // the panel's swipe-down-to-leave gesture rides this view's
+          // under-scroll at the top, and the default physics would refuse
+          // the drag outright when there is nothing to scroll to.
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           itemCount: lyrics.lines.length,
           itemBuilder: (context, index) => Padding(
@@ -215,30 +246,32 @@ class _Message extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
+    return _staticPane(
+      Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              detail,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(height: 6),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

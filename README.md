@@ -29,8 +29,9 @@ would otherwise pause audio the moment the screen locks.
   the full player with one drag gesture; the seek bar re-reads the engine clock
   once per display frame, so motion is smooth without polling the WebView.
 - **Queue and Lyrics tabs** in the full player — tapping one opens that
-  panel (the lyrics source is not implemented yet, so the lyrics panel
-  currently renders an empty state).
+  panel, and swiping down anywhere in a panel once you are back at the top
+  of its scroll closes it again (the lyrics source is not implemented yet,
+  so the lyrics panel currently renders an empty state).
 - **Deep links** — `/track` and `/playlist` routes open shared content directly.
 - Exponential-backoff retries across every provider, with per-attempt failures
   preserved so the UI can say exactly what was tried.

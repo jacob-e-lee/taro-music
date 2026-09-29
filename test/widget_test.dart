@@ -9,6 +9,7 @@ import 'package:taro_music/features/player/application/webview_bridge.dart';
 import 'package:taro_music/features/player/application/providers.dart';
 import 'package:taro_music/features/player/presentation/now_playing_sheet.dart';
 import 'package:taro_music/features/player/presentation/player_sheet_controller.dart';
+import 'package:taro_music/features/player/presentation/queue_tab.dart';
 
 /// A shell with no media loaded yet.
 ///
@@ -528,6 +529,243 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_playerHeight(tester), closeTo(openHeight, 1));
+  });
+
+  testWidgets('Swiping down in the queue body leaves the panel', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openOn(tester);
+    await _peek(tester);
+
+    expect(find.textContaining('Up Next'), findsOneWidget);
+    // The tab bar rides the morph, so its position is the panel's ruler.
+    final peekBarTop = tester.getTopLeft(find.text('Queue')).dy;
+
+    // Start on the panel's own content - the body's scroll view, far from
+    // the tab bar - so this exercises the pull, not the bar's drag.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.textContaining('Up Next')),
+    );
+    await tester.pump();
+
+    // The first move covers the recogniser's touch slop.
+    await gesture.moveBy(const Offset(0, 20));
+    await tester.pump();
+
+    // Then the pull tracks the finger one-for-one: the bar (and with it the
+    // panel's top edge) moves exactly as far as the finger did.
+    final barBefore = tester.getTopLeft(find.text('Queue')).dy;
+    await gesture.moveBy(const Offset(0, 100));
+    await tester.pump();
+    expect(
+      tester.getTopLeft(find.text('Queue')).dy - barBefore,
+      closeTo(100, 4),
+    );
+
+    // Keep pulling down past half the travel and release: the panel is gone
+    // and the full player is back.
+    for (var i = 0; i < 16; i++) {
+      await gesture.moveBy(const Offset(0, 40));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Up Next'), findsNothing);
+    final barTop = tester.getTopLeft(find.text('Queue')).dy;
+    expect(barTop, greaterThan(peekBarTop + 100));
+  });
+
+  testWidgets('The queue only closes from its top, not while scrolled', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openOn(tester);
+    await _peek(tester);
+
+    // Enough queue to scroll, so there is a "not at the top" state at all.
+    await _lastHandler!.addQueueItems(
+      List<MediaItem>.generate(
+        30,
+        (i) => MediaItem(id: 'q$i', title: 'Queue Track $i'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final peekBarTop = tester.getTopLeft(find.text('Queue')).dy;
+
+    // Scroll the list down, away from its top.
+    await tester.drag(find.byType(QueueTab), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    // Pulling down from the middle of the list only scrolls it back towards
+    // the top: while the list is not at its top, the pull is not the
+    // panel's, and the morph - read off the tab bar - does not move.
+    await tester.drag(find.byType(QueueTab), const Offset(0, 250));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('Queue')).dy, closeTo(peekBarTop, 1));
+
+    // Keep going: the list reaches its top, and from there the rejected
+    // distance belongs to the panel - past half the travel, releasing
+    // closes it.
+    await tester.drag(find.byType(QueueTab), const Offset(0, 400));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Up Next'), findsNothing);
+  });
+
+  testWidgets('A small swipe down inside the panel springs it back', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openOn(tester);
+    await _peek(tester);
+
+    final peekBarTop = tester.getTopLeft(find.text('Queue')).dy;
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.textContaining('Up Next')),
+    );
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 20)); // touch slop
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 60)); // a little past the top
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Not far enough to mean "close": the panel settles back where it was.
+    expect(find.textContaining('Up Next'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Queue')).dy, closeTo(peekBarTop, 1));
+  });
+
+  testWidgets('The lyrics empty state can be swiped down out of', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openOn(tester);
+    await _peek(tester);
+
+    await tester.tap(find.text('Lyrics'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lyrics unavailable'), findsOneWidget);
+    final peekBarTop = tester.getTopLeft(find.text('Queue')).dy;
+
+    // The empty state has no scrollable content at all, but the gesture
+    // lives in the panel body, so it still has to work here.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Lyrics unavailable')),
+    );
+    await tester.pump();
+    for (var i = 0; i < 20; i++) {
+      await gesture.moveBy(const Offset(0, 40));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Lyrics unavailable'), findsNothing);
+    final barTop = tester.getTopLeft(find.text('Queue')).dy;
+    expect(barTop, greaterThan(peekBarTop + 100));
+  });
+
+  testWidgets('Reversing a panel pull drags the morph back up', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openOn(tester);
+    await _peek(tester);
+
+    final peekBarTop = tester.getTopLeft(find.text('Queue')).dy;
+    final headerTop = tester.getTopLeft(find.textContaining('Up Next')).dy;
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.textContaining('Up Next')),
+    );
+    await tester.pump();
+
+    // Small steps with a frame between, as a real finger produces. A single
+    // jump past the 18px slop would be claimed by the scroll view first, which
+    // is the overscroll path rather than the one under test here.
+    for (var i = 0; i < 24; i++) {
+      await gesture.moveBy(const Offset(0, 10));
+      await tester.pump();
+    }
+    // 1:1, less the first step's worth of distance that goes into getting the
+    // recognizer accepted - a drag always spends something on its threshold.
+    final pulled = tester.getTopLeft(find.text('Queue')).dy - peekBarTop;
+    expect(pulled, inInclusiveRange(200, 240));
+
+    // Change of mind: come back up. The morph has to follow the finger back
+    // rather than freezing and letting the queue scroll instead.
+    final barBeforeReverse = tester.getTopLeft(find.text('Queue')).dy;
+    for (var i = 0; i < 24; i++) {
+      await gesture.moveBy(const Offset(0, -10));
+      await tester.pump();
+    }
+    final barAfterReverse = tester.getTopLeft(find.text('Queue')).dy;
+    expect(barAfterReverse, lessThan(barBeforeReverse));
+    expect(barBeforeReverse - barAfterReverse, closeTo(pulled, 6));
+
+    // And the list never moved under any of it.
+    expect(
+      tester.getTopLeft(find.textContaining('Up Next')).dy,
+      closeTo(headerTop, 2),
+    );
+
+    // Released short of the half-way mark: springs open again.
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Up Next'), findsOneWidget);
+  });
+
+  testWidgets('Reversing a scroll-owned pull settles instead of freezing', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_playerApp());
+    await _openOn(tester);
+    await _peek(tester);
+
+    await _lastHandler!.addQueueItems(
+      List<MediaItem>.generate(
+        30,
+        (i) => MediaItem(id: 'q$i', title: 'Queue Track $i'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Start away from the top, so the scroll view owns the pointer and the
+    // under-scroll is the only thing feeding the morph.
+    await tester.drag(find.byType(QueueTab), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    final peekBarTop = tester.getTopLeft(find.text('Queue')).dy;
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(QueueTab)),
+    );
+    await tester.pump();
+    // Down past the top of the list and on into the panel's own travel.
+    for (var i = 0; i < 30; i++) {
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+    }
+    // Then back up: the list starts scrolling again, the under-scroll stops,
+    // and the morph has to be settled rather than abandoned mid-transition.
+    for (var i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Landed on an end, not stranded: either the panel is back at its full
+    // peek position, or it is gone entirely. Anything between the two is the
+    // frozen half-transition this guards against.
+    final panelOpen = find.textContaining('Up Next').evaluate().isNotEmpty;
+    if (panelOpen) {
+      expect(tester.getTopLeft(find.text('Queue')).dy, closeTo(peekBarTop, 2));
+    } else {
+      expect(tester.getTopLeft(find.text('Queue')).dy, greaterThan(peekBarTop + 100));
+    }
   });
 
   testWidgets('Letting go mid-screen always snaps the player to an end', (
