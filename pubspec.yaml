@@ -1,4 +1,4 @@
-﻿name: taro_music
+name: taro_music
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -46,6 +46,7 @@ dependencies:
   shared_preferences: ^2.5.5
   github_release_apk_updater: ^1.0.11
   package_info_plus: ^10.2.1
+  dart_ytmusic_api: ^1.3.7
 
 dev_dependencies:
   flutter_test:

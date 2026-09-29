@@ -9,6 +9,11 @@ enum MediaSourceKind {
   /// The Cobalt proxy. It performs YouTube's token exchange server-side, so
   /// this is the only path that yields a playable URL today.
   cobalt,
+
+  /// YouTube Music's curated song catalogue (`dart_ytmusic_api`). Search-only:
+  /// no extractor consumes this kind, since a catalogue `videoId` plays
+  /// through the same engine as any other YouTube id.
+  ytmusic,
 }
 
 /// Base class for every expected error surfaced to the UI.

@@ -3,10 +3,11 @@ import 'track.dart';
 
 /// Which kind of result the user is searching for.
 ///
-/// This is a *presentation* choice, not a different source: both variants hit
-/// the same providers, but the providers are asked for a different slice
-/// (YouTube's `sp` type filter, Piped's `filter` param), so it is threaded all
-/// the way down to [SearchSource] rather than being filtered client-side.
+/// This is a *presentation* choice that decides which providers are asked, not
+/// a different query against the same source: songs are served by the YouTube
+/// Music catalogue (with Piped's `music_songs` as fallback), videos by regular
+/// YouTube search (with Piped's `music_videos` as fallback). It is threaded
+/// all the way down to [SearchSource] rather than being filtered client-side.
 enum SearchScope {
   songs('Songs', 'music_songs'),
   videos('Videos', 'music_videos');

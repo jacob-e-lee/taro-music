@@ -47,12 +47,17 @@ class FallbackMediaRepository implements MediaRepository {
     }
 
     // A continuation token can only be replayed by the provider that issued it.
+    // Sources are additionally filtered by scope: the songs catalogue and the
+    // videos endpoint answer disjoint slices, so a source that cannot serve
+    // the requested slice is skipped before it can fail (or answer wrongly).
     final issuer = continuationSource(continuation);
-    final candidates = issuer == null
-        ? _searchSources
-        : _searchSources
-              .where((source) => source.kind == issuer)
-              .toList(growable: false);
+    final candidates = _searchSources
+        .where(
+          (source) =>
+              (issuer == null || source.kind == issuer) &&
+              source.supportsScope(filter),
+        )
+        .toList(growable: false);
 
     if (candidates.isEmpty) {
       throw InvalidStateFailure(

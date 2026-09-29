@@ -8,6 +8,7 @@ import '../../features/player/data/extractors/stream_probe.dart';
 import '../../features/player/data/repositories/fallback_media_repository.dart';
 import '../../features/player/data/sources/piped_search_source.dart';
 import '../../features/player/data/sources/search_source.dart';
+import '../../features/player/data/sources/ytmusic_search_source.dart';
 import '../../features/player/data/sources/youtube_search_source.dart';
 import '../../features/player/domain/media_repository.dart';
 import '../config/app_config.dart';
@@ -47,8 +48,12 @@ class MediaStack {
       dio: dio,
       repository: FallbackMediaRepository(
         searchSources: <SearchSource>[
-          // Direct YouTube first: richer metadata and no third-party uptime
-          // risk. Piped catches both bot checks and instance outages.
+          // Songs come from the YouTube Music catalogue: it is the one
+          // provider where "official song" is a curated fact, not a guess.
+          // It answers the songs scope only; the videos scope falls past it
+          // to regular YouTube search. Both then share Piped as the proxy
+          // that catches bot checks and outages.
+          YTMusicSearchSource(),
           YoutubeSearchSource(youtube),
           PipedSearchSource(dio),
         ],

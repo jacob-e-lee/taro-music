@@ -34,6 +34,10 @@ class PipedSearchSource implements SearchSource {
   @override
   String get label => 'Piped';
 
+  /// Piped answers every slice via its `filter` param.
+  @override
+  bool supportsScope(SearchScope scope) => true;
+
   String get currentInstance =>
       instances[_cursor % instances.length].replaceAll(RegExp(r'/+$'), '');
 

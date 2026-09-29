@@ -5,7 +5,12 @@ import '../../domain/search_results.dart';
 import '../../domain/track.dart';
 import 'search_source.dart';
 
-/// Primary search source: YouTube's own innertube search endpoint.
+/// Fallback videos search source: YouTube's own innertube search endpoint.
+///
+/// Songs go to the YouTube Music catalogue instead — regular YouTube has no
+/// "songs" type, only ranking heuristics, so it cannot answer that scope with
+/// the "official catalogue only" guarantee the Songs toggle makes. Videos are
+/// exactly what innertube is good at.
 ///
 /// YouTube pages with an opaque `continuation` token that can only be replayed
 /// by the exact list object that issued it, so the last few pages are kept in
@@ -27,18 +32,23 @@ class YoutubeSearchSource implements SearchSource {
   String get label => 'YouTube';
 
   @override
+  bool supportsScope(SearchScope scope) => scope == SearchScope.videos;
+
+  @override
   Future<SearchResults> search(
     String query, {
     String? continuation,
     SearchScope filter = SearchScope.songs,
   }) async {
+    if (filter != SearchScope.videos) {
+      throw InvalidStateFailure(
+        'YouTube search only serves videos, not ${filter.name}',
+      );
+    }
     final VideoSearchList page;
     if (continuation == null) {
       page = await _guard(
-        () => _youtube.search.search(
-          _queryFor(query, filter),
-          filter: _spFilterFor(filter),
-        ),
+        () => _youtube.search.search(query, filter: TypeFilters.video),
       );
     } else {
       final previous = _pages[continuation];
@@ -72,19 +82,6 @@ class YoutubeSearchSource implements SearchSource {
 
     return SearchResults(tracks: tracks, source: kind, continuation: token);
   }
-
-  /// Innertube has no "songs" type — its `sp` filter only distinguishes videos
-  /// from channels/playlists — so the music slice is expressed by biasing the
-  /// query instead, and the *video* slice is the one that uses a real `sp`
-  /// filter. Songs additionally drop live streams below.
-  static SearchFilter _spFilterFor(SearchScope filter) =>
-      filter == SearchScope.videos ? TypeFilters.video : const SearchFilter('');
-
-  /// YouTube's music search is the normal search with a music-leaning suffix.
-  /// `official audio` biases toward the audio upload rather than a music video,
-  /// which is what a listener actually wants from the "Songs" toggle.
-  static String _queryFor(String query, SearchScope filter) =>
-      filter == SearchScope.songs ? '$query official audio' : query;
 
   static Track? _trackFrom(Video video) {
     final id = video.id.value;

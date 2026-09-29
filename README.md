@@ -16,8 +16,11 @@ would otherwise pause audio the moment the screen locks.
 
 ## Features
 
-- **Search** YouTube directly (`youtube_explode_dart`), with a Piped proxy as
-  automatic fallback when YouTube bot-checks or rate-limits.
+- **Strict "Songs" results** from the YouTube Music catalogue
+  (`dart_ytmusic_api`) — official tracks only, no lyric videos or unofficial
+  uploads — with a Piped proxy (`music_songs`) as automatic fallback. The
+  "Videos" tab searches YouTube directly (`youtube_explode_dart`), again with
+  Piped behind it.
 - **Background playback** with a media notification, lock-screen controls, and
   headset-button support via `audio_service`.
 - **Full queue model** — shuffle, repeat one/all, skip next/previous, seek,
@@ -52,8 +55,9 @@ lib/
     ├── library/               Library tab (currently sample offline tracks)
     └── player/
         ├── domain/            Track, MediaRepository, PlaybackSource, Lyrics
-        ├── data/              Search sources (YouTube, Piped), stream
-        │                      extractors (Cobalt chain), fallback repository
+        ├── data/              Search sources (YouTube Music, YouTube, Piped),
+        │                      stream extractors (Cobalt chain), fallback
+        │                      repository
         ├── application/       WebViewAudioHandler, YouTubeWebViewBridge,
         │                      Riverpod providers
         └── presentation/      Now-playing sheet, queue tab, hidden engine
@@ -73,9 +77,9 @@ lib/
    `onStateChange`, `onPlayerError`, and a 250 ms `onPlayerInfo` status frame
    (current time + duration, used as a drift check and to fill in unknown
    durations).
-4. Search/metadata still go through `MediaStack` (`YoutubeExplode` + Piped);
-   the engine resolves its own streams from YouTube, so playback no longer goes
-   through the extractor chain.
+4. Search/metadata still go through `MediaStack` (YouTube Music catalogue,
+   `YoutubeExplode` + Piped); the engine resolves its own streams from YouTube,
+   so playback no longer goes through the extractor chain.
 
 ### Cross-language contracts
 
