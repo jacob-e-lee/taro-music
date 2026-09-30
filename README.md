@@ -21,6 +21,11 @@ would otherwise pause audio the moment the screen locks.
   uploads — with a Piped proxy (`music_songs`) as automatic fallback. The
   "Videos" tab searches YouTube directly (`youtube_explode_dart`), again with
   Piped behind it.
+- **Artwork that degrades instead of giving up** — the player asks for the best
+  available thumbnail tier and steps down (1280x720 → 640x480 → 480x360) if that
+  tier 404s, rather than showing a placeholder. Defensive rather than
+  load-bearing: catalogue sources already pick the largest thumbnail they offer,
+  so in practice the best tier usually succeeds on the first try.
 - **Background playback** with a media notification, lock-screen controls, and
   headset-button support via `audio_service`.
 - **Full queue model** — shuffle, repeat one/all, skip next/previous, seek,

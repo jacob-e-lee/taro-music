@@ -3,8 +3,29 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/artwork/resilient_artwork.dart';
 import '../application/webview_audio_handler.dart';
 import '../domain/track.dart';
+
+/// Edge length of a queue row's artwork, in logical pixels.
+const double _thumbnailExtent = 36;
+
+/// Physical pixels to decode a [_thumbnailExtent]-sized thumbnail at, or null
+/// when the device pixel ratio is unknown - in which case the caller decodes at
+/// the source's own size, which is wasteful rather than wrong.
+///
+/// `maybe` rather than the plain accessor so a row rendered without a
+/// MediaQuery degrades to the previous behaviour instead of asserting.
+///
+/// Rounded, not truncated: a 2.625x screen gives 94.5px for a 36dp thumbnail,
+/// and rounding down to 94 would shave a pixel off a sharp display for no
+/// reason. ResizeImage clamps to the source's size regardless, so this can
+/// never upscale.
+int? _decodeSizeOf(BuildContext context) {
+  final dpr = MediaQuery.maybeDevicePixelRatioOf(context);
+  if (dpr == null) return null;
+  return (_thumbnailExtent * dpr).round();
+}
 
 /// The "Up Next" queue, rendered as a **sliver** rather than a box widget.
 ///
@@ -254,16 +275,22 @@ class _QueueRow extends StatelessWidget {
               const SizedBox(width: 4),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: item.artUri != null
-                    ? Image.network(
-                        item.artUri.toString(),
-                        width: 36,
-                        height: 36,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.music_note, size: 20),
-                      )
-                    : const Icon(Icons.music_note, size: 20),
+                child: ResilientArtwork(
+                  url: item.artUri?.toString(),
+                  width: _thumbnailExtent,
+                  height: _thumbnailExtent,
+                  // The url is 544px; this paints 36dp, which is ~108 physical
+                  // pixels. Decoding at full size would put a screenful of
+                  // oversized bitmaps on the raster thread at exactly the
+                  // moment the queue is being opened and animated in.
+                  //
+                  // `maybe` rather than the plain accessor so a row rendered
+                  // without a MediaQuery degrades to the old full-size decode
+                  // instead of asserting.
+                  cacheWidth: _decodeSizeOf(context),
+                  cacheHeight: _decodeSizeOf(context),
+                  fallback: const Icon(Icons.music_note, size: 20),
+                ),
               ),
             ],
           ),

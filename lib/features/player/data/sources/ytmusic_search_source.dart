@@ -1,4 +1,4 @@
-﻿import 'package:dart_ytmusic_api/types.dart';
+import 'package:dart_ytmusic_api/types.dart';
 import 'package:dart_ytmusic_api/yt_music.dart';
 import 'package:flutter/foundation.dart';
 
@@ -78,13 +78,12 @@ class YTMusicSearchSource implements SearchSource {
   Future<void> _ensureInitialized() {
     // A failed init must not be cached — the singleton's `hasInitialized`
     // stays false, so the next search should be allowed to try again.
-    return _initFuture ??= _client
-        .initialize()
-        .then((_) {})
-        .catchError((Object error) {
-          _initFuture = null;
-          throw error;
-        });
+    return _initFuture ??= _client.initialize().then((_) {}).catchError((
+      Object error,
+    ) {
+      _initFuture = null;
+      throw error;
+    });
   }
 
   /// The package throws plain [Exception]s (Innertube errors, config fetch
@@ -108,8 +107,14 @@ class YTMusicSearchSource implements SearchSource {
   ///
   /// `duration` is seconds-or-null in the package: null (or non-positive)
   /// becomes [Duration.zero], which the UI renders as unknown length rather
-  /// than a bogus timestamp. The largest thumbnail wins — catalogue artwork
-  /// arrives smallest-first.
+  /// than a bogus timestamp.
+  ///
+  /// The largest thumbnail wins, as catalogue artwork arrives smallest-first.
+  /// Note the ceiling here is 544px: that is all the API ever advertises, so
+  /// this loop cannot reach the 1280px the CDN would actually serve. That is
+  /// fine, because the hero opts into an upscaled url at paint time
+  /// (ResilientArtwork(upscale: true)). Do not try to fix the softness by
+  /// reordering this loop — it is already choosing the best of what it is given.
   @visibleForTesting
   static Track? trackFrom(SongDetailed song) {
     if (song.videoId.isEmpty) return null;

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/artwork/resilient_artwork.dart';
 import '../application/webview_audio_handler.dart';
 import '../application/providers.dart';
 import '../domain/track.dart';
@@ -257,6 +258,20 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
           0.0,
           usable - playerHeight - tabBarHeight,
         );
+        // The height the tab content has once the player is fully open - its
+        // resting size, and the only size it is ever *laid out* at.
+        //
+        // The gap above it still animates, so the queue is revealed by clipping
+        // that gap rather than by being re-measured to fit it. Sizing the
+        // scroll view to `tabContentHeight` instead would hand it a new height
+        // on every frame of the morph, and a re-measured scroll view relayouts
+        // and repaints every row it has built - so the sliver QueueTab relies on
+        // cannot help, because a *growing* viewport is inside a larger set of
+        // rows on every frame of the animation.
+        final openTabContentHeight = math.max(
+          0.0,
+          usable - _miniStripHeight - _tabBarHeight,
+        );
         // Cached for the body's under-scroll handler: the same travel the
         // bar is handed just below, so both gestures scale finger pixels
         // into morph identically.
@@ -337,10 +352,31 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
                           ),
                         ),
                         SizedBox(
+                          // Still the animated height: the column reserves this
+                          // gap, and the clip below reveals the queue through it.
+                          // Zero while collapsed, which keeps the closed surface
+                          // down to the band.
                           height: tabContentHeight,
                           child: morph <= 0.001
                               ? const SizedBox.shrink()
-                              : RawGestureDetector(
+                              : ClipRect(
+                                  child: Stack(
+                                    children: <Widget>[
+                                      // Top-pinned, so the first row sits under
+                                      // the tab bar and stays there: the content
+                                      // never moves, and is laid out once.
+                                      Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        height: openTabContentHeight,
+                                        child: RepaintBoundary(
+                                          // Isolate the pager's raster, so
+                                          // revealing it does not force the whole
+                                          // page to re-raster every frame.
+                                          child: Opacity(
+                                            opacity: morph.clamp(0.0, 1.0),
+                                            child: RawGestureDetector(
                                   // The body's own pull, sitting *above* the
                                   // scroll view in the hit path so it is the
                                   // first to be offered the pointer.
@@ -374,35 +410,38 @@ class _NowPlayingSheetState extends ConsumerState<NowPlayingSheet>
                                     // pointer and only gives the rejected
                                     // distance back as an under-scroll.
                                     onNotification: _onPanelScrollNotification,
-                                    child: Opacity(
-                                      opacity: morph.clamp(0.0, 1.0),
-                                      // A pager rather than a `switch` on the
-                                      // selected tab, so the two panels are
-                                      // side by side and can be swiped between.
-                                      // `PageView` keeps its horizontal drag on
-                                      // its own recognizer, which cannot accept
-                                      // a vertical pull, so the panel's
-                                      // close-from-the-top gesture above is
-                                      // untouched by it.
-                                      child: PageView.builder(
-                                        controller: _pageController,
-                                        onPageChanged: _onPanelPageChanged,
-                                        itemCount: PlayerTab.values.length,
-                                        itemBuilder: (context, index) =>
-                                            switch (PlayerTab.values[index]) {
-                                              PlayerTab.queue => QueueTab(
-                                                handler: handler,
-                                              ),
-                                              PlayerTab.lyrics => LyricsPane(
-                                                trackId:
-                                                    Track.fromExtras(
-                                                      item.extras,
-                                                    )?.id ??
-                                                    '',
-                                              ),
-                                            },
-                                      ),
+                                    // A pager rather than a `switch` on the
+                                    // selected tab, so the two panels are side
+                                    // by side and can be swiped between.
+                                    // `PageView` keeps its horizontal drag on
+                                    // its own recognizer, which cannot accept a
+                                    // vertical pull, so the panel's
+                                    // close-from-the-top gesture above is
+                                    // untouched by it.
+                                    child: PageView.builder(
+                                      controller: _pageController,
+                                      onPageChanged: _onPanelPageChanged,
+                                      itemCount: PlayerTab.values.length,
+                                      itemBuilder: (context, index) =>
+                                          switch (PlayerTab.values[index]) {
+                                            PlayerTab.queue => QueueTab(
+                                              handler: handler,
+                                            ),
+                                            PlayerTab.lyrics => LyricsPane(
+                                              trackId:
+                                                  Track.fromExtras(
+                                                    item.extras,
+                                                  )?.id ??
+                                                  '',
+                                            ),
+                                          },
                                     ),
+                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                         ),
@@ -1335,13 +1374,20 @@ class _SwipeableAlbumArtState extends State<_SwipeableAlbumArt>
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(radius),
                 child: widget.artUri != null
-                    ? Image.network(
-                        widget.artUri.toString(),
+                    ? ResilientArtwork(
+                        url: widget.artUri.toString(),
                         width: artSize,
                         height: artSize,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            _NowPlayingFallbackArt(size: artSize),
+                        // The one image big enough for the resample to be
+                        // visible; the small ones are drawn near 1:1.
+                        filterQuality: FilterQuality.high,
+                        // The only artwork in the app worth a 1280px download.
+                        // This is the one widget serving both the 320dp hero and
+                        // the 48dp mini-player - the drag lerps artSize between
+                        // them - so asking once for the large size covers both
+                        // states with no second request and no visible swap.
+                        upscale: true,
+                        fallback: _NowPlayingFallbackArt(size: artSize),
                       )
                     : _NowPlayingFallbackArt(size: artSize),
               ),

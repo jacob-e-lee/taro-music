@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/artwork/resilient_artwork.dart';
 import '../../player/domain/track.dart';
 
 /// One tappable search result: 56px artwork, title, artist, duration, offline
@@ -26,15 +27,12 @@ class TrackTile extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.all(Radius.circular(6)),
-                child: track.hasArtwork
-                    ? Image.network(
-                        track.artworkUrl!,
-                        width: 52,
-                        height: 52,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const _FallbackArt(size: 52),
-                      )
-                    : const _FallbackArt(size: 52),
+                child: ResilientArtwork(
+                  url: track.artworkUrl,
+                  width: 52,
+                  height: 52,
+                  fallback: const _FallbackArt(size: 52),
+                ),
               ),
               if (track.isDownloaded)
                 Positioned(
