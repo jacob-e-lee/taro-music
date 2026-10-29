@@ -123,6 +123,9 @@
     'html, * { -webkit-tap-highlight-color: transparent !important; }',
     // A slimmer top bar (YouTube's is 64px); its contents and the page below follow this variable.
     'html { --ytmusic-nav-bar-height: 48px !important; }',
+    // Pull the chip rows (Home's moods, Library's filters) up under the top bar.
+    'ytmusic-browse-response ytmusic-chip-cloud-chip-renderer { padding-top: 8px !important; }',
+    'ytmusic-browse-response #header > ytmusic-side-aligned-item-renderer { margin-top: 0 !important; }',
     '#taro-nav { position: fixed; left: 0; right: 0; bottom: 0; height: ' + NAV_H + 'px; z-index: 4;' +
       ' display: flex; background: #030303; border-top: 1px solid rgba(255,255,255,.1); }',
     '#taro-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;' +
