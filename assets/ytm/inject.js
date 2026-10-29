@@ -4,16 +4,25 @@
   if (window.__taroYtm) return;
   window.__taroYtm = true;
 
+  // At document start there may be no <html> yet; wait for it instead of throwing.
+  function addStyle(css) {
+    var style = document.createElement('style');
+    style.textContent = css;
+    if (document.documentElement) return (document.head || document.documentElement).appendChild(style);
+    new MutationObserver(function (_, obs) {
+      if (!document.documentElement) return;
+      obs.disconnect();
+      document.documentElement.appendChild(style);
+    }).observe(document, { childList: true });
+  }
+
   // ---- CSS: prefer element names (stable) over hashed class names. ----------
-  var css = [
+  addStyle([
     // "Get the app" / upsell banners.
     'ytmusic-mealbar-promo-renderer, ytmusic-statement-banner-renderer { display: none !important; }',
     // "Open app" button (mobile web).
     '.app-install-link, a[href^="https://app.music.youtube.com"], .open-app-button,ytmusic-open-app-button, a[href*="app.adjust"], a[href^="intent://"], a[href*="play.google.com/store/apps/details?id=com.google.android.apps.youtube.music"] { display: none !important; }',
-  ].join('\n');
-  var style = document.createElement('style');
-  style.textContent = css;
-  (document.head || document.documentElement).appendChild(style);
+  ].join('\n'));
 
   // Fallback that also reaches into shadow roots, where the page-level CSS above can't.
   function hideOpenApp(root) {
@@ -102,10 +111,8 @@
 
   // ---- Ads: fallback if one slips through. Selectors are unverified. --------
   // Video ads play in the same <video>: mute, speed through, seek to the end.
-  var adStyle = document.createElement('style');
-  adStyle.textContent = '.video-ads, .ytp-ad-module, .ytp-ad-overlay-container, ' +
-    'ytmusic-player-ad-renderer { display: none !important; }';
-  (document.head || document.documentElement).appendChild(adStyle);
+  addStyle('.video-ads, .ytp-ad-module, .ytp-ad-overlay-container, ' +
+    'ytmusic-player-ad-renderer { display: none !important; }');
 
   setInterval(function () {
     var v = document.querySelector('video');

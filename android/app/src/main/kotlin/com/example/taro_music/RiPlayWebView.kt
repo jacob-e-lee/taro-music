@@ -1,8 +1,11 @@
 ﻿package com.example.taro_music
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
+import android.util.Log
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -25,10 +28,16 @@ import java.io.ByteArrayInputStream
  */
 class RiPlayWebView(context: Context) : WebView(context) {
 
-    private val script: String = context.assets
-        .open("flutter_assets/assets/ytm/inject.js").bufferedReader().use { it.readText() }
+    private val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    // Debug builds prefer a file pushed by tool/dev-js.ps1, so JS changes skip the rebuild.
+    private val script: String = context.getExternalFilesDir(null)
+        ?.resolve("inject.js")?.takeIf { debuggable && it.isFile }?.readText()
+        ?: context.assets.open("flutter_assets/assets/ytm/inject.js").bufferedReader().use { it.readText() }
 
     init {
+        // Lets edge://inspect / brave://inspect attach to this WebView over USB.
+        WebView.setWebContentsDebuggingEnabled(debuggable)
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -39,7 +48,13 @@ class RiPlayWebView(context: Context) : WebView(context) {
                 .replace("; wv", "").replace("Version/4.0 ", "")
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-        webChromeClient = WebChromeClient()
+        webChromeClient = object : WebChromeClient() {
+            // Page console output → `adb logcat -s RiPlay`.
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                Log.d("RiPlay", "${m.messageLevel()} ${m.message()} (${m.sourceId()}:${m.lineNumber()})")
+                return true
+            }
+        }
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 // Fallback for WebViews without document-start scripts (see init).
