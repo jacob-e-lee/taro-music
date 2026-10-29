@@ -150,14 +150,14 @@
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { bottom: ' + (NAV_H + 8) + 'px !important; }',
     'ytmusic-app-layout > #content { margin-bottom: ' + NAV_H + 'px; }',
     // Our swipes own these areas; otherwise the browser pans the page underneath.
-    '#player-page #main-panel, ytmusic-app-layout > ytmusic-player-bar { touch-action: none; }',
+    '#player-page #main-panel, #player-page #player, ytmusic-app-layout > ytmusic-player-bar { touch-action: none; }',
     // Sheet mode (see setP): the player drawn part-way between mini and full, with the page behind visible.
     'html.taro-sheet #content, html.taro-sheet ytmusic-nav-bar, html.taro-sheet ytmusic-player-page { visibility: visible !important; }',
     'html.taro-sheet #taro-nav { display: flex !important; z-index: 7; }',
     // The mini bar fades out above the rising page, over its own grey (#taro-shade).
     // #layout (YouTube's id for ytmusic-app-layout) outranks YouTube's open-state rule that pins the bar to the bottom.
     'html.taro-sheet #layout > ytmusic-player-bar { visibility: visible !important; bottom: ' + NAV_H + 'px !important;' +
-      ' z-index: 7 !important; background: transparent !important; transition: none !important; pointer-events: none; }',
+      ' z-index: 7 !important; background: transparent !important; transition: none !important; }',
     // YouTube hides the bar's contents while its player is open; keep them for the sheet's mini end.
     'html.taro-sheet #layout > ytmusic-player-bar > * { visibility: inherit !important; }',
     // YouTube hides the closed player a moment after closing; don't let it show once the sheet is gone.
@@ -273,36 +273,50 @@
     document.documentElement.classList.add('taro-sheet');
     return {
       pg: pg, art: art, shade: shade, bar: document.querySelector(MINI), nav: document.getElementById('taro-nav'),
-      fades: [].slice.call(pg.querySelectorAll(FADE)), top: innerHeight - NAV_H - BAR_H, full: full,
+      fades: [].slice.call(pg.querySelectorAll(FADE)), top: sheetTop(), full: full,
     };
   }
+  // The mini bar's top. innerHeight is rounded (693 for a 693.67px viewport), which would
+  // leave the art a device pixel or two off YouTube's.
+  var sheetTop = function () { return (window.visualViewport ? visualViewport.height : innerHeight) - NAV_H - BAR_H; };
+  // To whole device pixels, where YouTube's own art is painted; a GPU-moved layer isn't snapped.
+  var snap = function (v) { return Math.round(v * devicePixelRatio) / devicePixelRatio; };
   var clamp = function (v) { return Math.min(1, Math.max(0, v)); };
   function setP(p) {
     var g = geo || (geo = measure());
     if (!g) return;
     sheetP = p;
     var f = g.full, size = 48 + (f.w - 48) * p, x = 16 + (f.x - 16) * p, y = g.top + 8 + (f.y - g.top - 8) * p;
-    g.pg.style.transform = 'translate3d(0,' + (1 - p) * g.top + 'px,0)';
-    g.art.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) scale(' + size / f.w + ')';
+    g.pg.style.transform = 'translate3d(0,' + snap((1 - p) * g.top) + 'px,0)';
+    g.art.style.transform = 'translate3d(' + snap(x) + 'px,' + snap(y) + 'px,0) scale(' + size / f.w + ')';
+    // YouTube rounds the art 4px at both sizes; undo the scale so the corners stay 4px on screen.
+    g.art.style.borderRadius = 4 * f.w / size + 'px';
     g.shade.style.opacity = 1 - p;
     // !important: YouTube's finished slide-up animation still holds the bar's opacity, and animations beat inline styles.
     g.fades.forEach(function (el) { el.style.setProperty('opacity', clamp(p * 2 - 1), 'important'); });
-    if (g.bar) g.bar.style.setProperty('opacity', clamp(1 - p * 3), 'important');
+    if (g.bar) {
+      g.bar.style.setProperty('opacity', clamp(1 - p * 3), 'important');
+      // Touchable while the sheet shows the mini end, so it can be dragged again right away.
+      g.bar.style.pointerEvents = p < 0.5 ? '' : 'none';
+    }
     if (g.nav) g.nav.style.transform = 'translate3d(0,' + p * NAV_H + 'px,0)';
   }
   function endSheet() {
     geo = null;
     document.documentElement.classList.remove('taro-sheet');
     document.querySelectorAll('ytmusic-player-page, #taro-nav, ' + MINI + ', #player-page :is(' + FADE + ')')
-      .forEach(function (el) { el.style.transform = el.style.opacity = ''; });
+      .forEach(function (el) { el.style.transform = el.style.opacity = el.style.pointerEvents = ''; });
   }
   // calm: wait for frames to arrive on time before starting. After YouTube itself opens or
   // closes the player it stays busy for a frame or two, which would skip the animation's start.
+  var animToken = 0;  // bumping it cancels the running animation (a touch caught the sheet)
   function animateTo(target, done, calm) {
     var from = sheetP, t0 = 0, ms = 120 + 200 * Math.abs(target - from), last = 0, ok = 0, start = performance.now();
+    var token = ++animToken;
     animating = true;
     setP(from);
     requestAnimationFrame(function frame(now) {
+      if (token !== animToken) return;
       if (!t0) {
         ok = last && now - last < 20 ? ok + 1 : 0;
         last = now;
@@ -366,14 +380,25 @@
     if (e.touches.length !== 1) return;
     var t = e.target;
     if (t.closest('tp-yt-paper-slider, #side-panel')) return;
-    var zone = isOpen() ? (t.closest('#player-page #player') ? 'art' : t.closest('#player-page #main-panel') ? 'page' : null)
-      : t.closest(MINI) ? 'mini' : null;
+    // While the sheet rests at an end (just after a drag), go by what it shows: YouTube's own
+    // state may not have caught up yet. The mini player's art is YouTube's #player, not part of the bar.
+    var open = geo ? sheetP > 0.5 : isOpen();
+    var zone = open ? (t.closest('#player-page #player') ? 'art' : t.closest('#player-page #main-panel') ? 'page' : null)
+      : t.closest(MINI) || t.closest('#player-page #player') ? 'mini' : null;
     var x = e.touches[0].clientX, y = e.touches[0].clientY;
+    // Catch the sheet mid-animation, like a native one, instead of ignoring the touch.
+    var grab = animating && geo && !!(t.closest('ytmusic-player-page') || t.closest(MINI));
+    if (grab) {
+      animToken++;
+      animating = false;
+      zone = sheetP > 0.5 ? 'page' : 'mini';
+    }
     if (!zone || animating) return;
-    drag = { zone: zone, x: x, y: y, dx: 0, dy: 0, t: Date.now(), ly: y, lt: Date.now(), vy: 0, axis: null };
+    drag = { zone: zone, grab: grab, x: x, y: y, dx: 0, dy: 0, t: Date.now(), ly: y, lt: Date.now(), vy: 0, axis: null };
     // Set the sheet up now, at its resting end (looks identical), so its one-off cost
     // lands before the finger moves instead of on the drag's first frame.
-    if (portrait()) setP(zone === 'mini' ? 0 : 1);
+    if (!grab && portrait()) setP(zone === 'mini' ? 0 : 1);
+    drag.p0 = sheetP;
   }, { capture: true, passive: true });
   document.addEventListener('touchmove', function (e) {
     if (!drag) return;
@@ -385,15 +410,16 @@
     d.lt = now;
     if (!d.axis && Math.hypot(d.dx, d.dy) > 16) {
       d.axis = Math.abs(d.dx) > Math.abs(d.dy) ? 'x' : 'y';
-      d.sheet = d.axis === 'y' && portrait() && (d.zone !== 'mini' || d.dy < 0);
+      // A caught sheet stays the drag's whatever the direction; it can't be left mid-way.
+      d.sheet = d.grab || (d.axis === 'y' && portrait() && (d.zone !== 'mini' || d.dy < 0));
       if (!d.sheet) endSheet();
     }
     // Follow the finger so the gesture feels physical.
     if (d.axis === 'x' && d.zone === 'art') document.querySelector('#player-page #player').style.transform = 'translateX(' + d.dx + 'px)';
-    var top = innerHeight - NAV_H - BAR_H;
+    var top = sheetTop();
     if (d.sheet) {
       // Touch events can outpace the display; draw once per frame.
-      d.p = clamp(d.zone === 'mini' ? -d.dy / top : 1 - d.dy / top);
+      d.p = clamp(d.p0 - d.dy / top);
       if (!d.raf) d.raf = requestAnimationFrame(function () { d.raf = 0; if (drag === d) setP(d.p); });
     }
   }, { capture: true, passive: true });
@@ -402,17 +428,18 @@
     if (!drag) return;
     var d = drag;
     drag = null;
-    if (d.axis === 'x') {
-      if (d.zone === 'art') slide(document.querySelector('#player-page #player'), '', 150);
-      if (d.zone !== 'page' && Math.abs(d.dx) > 60) (d.dx < 0 ? next : prev)();
-    } else if (d.sheet) {
+    if (d.sheet) {
       setP(d.p);  // catch up with the finger before animating from there
       // A fling decides by direction; otherwise moving a quarter of the way is enough.
       // Speed is the faster of the last move and the whole drag (short flicks have few moves).
       var avg = d.dy / Math.max(1, Date.now() - d.t), v = Math.abs(d.vy) > Math.abs(avg) ? d.vy : avg;
       var fling = Math.abs(v) > 0.4 && Date.now() - d.lt < 100;
-      settle(fling ? (v < 0 ? 1 : 0) : d.zone === 'mini' ? (sheetP > 0.25 ? 1 : 0) : (sheetP < 0.75 ? 0 : 1));
-    } else endSheet();  // a tap: drop the sheet set up on touchstart
+      settle(fling ? (v < 0 ? 1 : 0) : d.p0 < 0.5 ? (sheetP > d.p0 + 0.25 ? 1 : 0) : (sheetP < d.p0 - 0.25 ? 0 : 1));
+    } else if (d.axis === 'x') {
+      if (d.zone === 'art') slide(document.querySelector('#player-page #player'), '', 150);
+      if (d.zone !== 'page' && Math.abs(d.dx) > 60) (d.dx < 0 ? next : prev)();
+    } else if (d.grab) settle(sheetP > 0.5 ? 1 : 0);  // a tap on a moving sheet: finish to the nearer end
+    else endSheet();  // a tap: drop the sheet set up on touchstart
   }
   document.addEventListener('touchend', release, { capture: true, passive: true });
   document.addEventListener('touchcancel', release, { capture: true, passive: true });
