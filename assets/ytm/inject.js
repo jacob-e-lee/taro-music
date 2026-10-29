@@ -115,20 +115,23 @@
   }, 100);
 
   // ---- Mobile UX: no tap flash, bottom tabs, swipe gestures. ----------------
-  var NAV_H = 56;
+  var NAV_H = 48;
   // Full-player parts that fade in as it opens (the artwork morphs instead).
   var FADE = '.background-image, .background-gradient, #side-panel, #main-panel > :not(#music-player-wrapper)';
   addStyle([
     // Inherited, so this also reaches into shadow roots.
     'html, * { -webkit-tap-highlight-color: transparent !important; }',
+    // A slimmer top bar (YouTube's is 64px); its contents and the page below follow this variable.
+    'html { --ytmusic-nav-bar-height: 48px !important; }',
     '#taro-nav { position: fixed; left: 0; right: 0; bottom: 0; height: ' + NAV_H + 'px; z-index: 4;' +
       ' display: flex; background: #030303; border-top: 1px solid rgba(255,255,255,.1); }',
     '#taro-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;' +
-      ' gap: 2px; background: none; border: 0; color: #aaa; font: 500 11px Roboto, sans-serif; }',
+      ' gap: 1px; background: none; border: 0; color: #aaa; font: 500 11px Roboto, sans-serif; }',
     '#taro-nav button[active] { color: #fff; }',
     // A key press (e.g. Escape) would otherwise leave a blue focus ring on the tapped tab.
     '#taro-nav button, #taro-new { outline: none; }',
     '#taro-nav svg, #taro-new svg { width: 24px; height: 24px; fill: currentColor; }',
+    '#taro-nav svg { width: 22px; height: 22px; }',
     'body:has(ytmusic-app-layout[player-page-open]) #taro-nav { display: none; }',
     // The tabs replace the drawer; its one extra, "New playlist", moves to the Library tab.
     'ytmusic-nav-bar #guide-button { display: none !important; }',
