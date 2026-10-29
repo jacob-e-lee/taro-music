@@ -3,7 +3,7 @@
 An Android-only app that wraps the YouTube Music website (music.youtube.com) in a WebView. It's a Flutter shell, but almost all behaviour lives in:
 
 - `android/app/src/main/kotlin/com/example/taro_music/RiPlayWebView.kt`: WebView setup, ad request blocking, visibility spoofing (keeps audio playing when the screen locks), script injection.
-- `assets/ytm/inject.js`: CSS/JS injected into the page: ad stripping (JSON.parse / fetch / XHR hooks), hiding upsells.
+- `assets/ytm/inject.js`: CSS/JS injected into the page: ad stripping (JSON.parse / fetch / XHR hooks), hiding upsells, and the mobile UX layer (bottom tab bar, swipe gestures, draggable player sheet).
 - `PlaybackService.kt`: foreground service that keeps the process alive.
 
 There is no desktop build. The app only runs on a real Android phone over USB, so all debugging goes through `adb`.
@@ -27,9 +27,10 @@ The hooks check `ApplicationInfo.FLAG_DEBUGGABLE`, not `BuildConfig`.
 
 **JS change** (most work). No rebuild needed:
 ```
-powershell -File tool/dev-js.ps1          # push assets/ytm/inject.js, restart app (~3 s)
-powershell -File tool/dev-js.ps1 -Reset   # delete override, back to bundled asset
+powershell -ExecutionPolicy Bypass -File tool/dev-js.ps1          # push assets/ytm/inject.js, restart app (~3 s)
+powershell -ExecutionPolicy Bypass -File tool/dev-js.ps1 -Reset   # delete override, back to bundled asset
 ```
+`-ExecutionPolicy Bypass` is needed because script execution is disabled on this machine.
 The app reads the script once, when the WebView is constructed, so a restart is required: reloading the page isn't enough. Restarting stops playback. Sign-in survives the restart because cookies persist.
 
 **Kotlin / Dart / asset change:** rebuild and install:
@@ -53,6 +54,15 @@ adb shell input swipe X1 Y1 X2 Y2 300
 ```
 Don't use `adb exec-out screencap > file` in PowerShell 5.1: its pipeline corrupts binary output.
 
+Before tapping by coordinates, check the phone is still in portrait (`adb shell dumpsys window displays | grep mCurrentRotation`) and that the page is in the state you expect. Auto-rotate is on, and blind taps in the wrong layout hit real UI (one opened the "New playlist" dialog). For anything that matters, read state through DevTools (below) instead of guessing from a screenshot.
+
+**Drive the page from the CLI (DevTools protocol):** the remote-DevTools hook also works without a browser:
+```
+adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof com.example.taro_music)
+curl -s localhost:9222/json/list
+```
+Then connect to `ws://localhost:9222/devtools/browser` (Node 22 has a global `WebSocket`), `Target.attachToTarget` the `page` target with `flatten: true`, and use `Runtime.evaluate` to query the DOM. `Page.startScreencast` captures the frames actually painted, which is the way to catch one-frame flickers that screenshots miss. The pid changes on every restart, so re-forward afterwards. If `/json/list` is empty, restart the app.
+
 **Verify a JS change ran:** push a scratch copy of `inject.js` (not the real file) with a `console.log('MARKER …')` before the closing `})();`, restart, and grep logcat. Afterwards run `dev-js.ps1` with the real file or `-Reset`, so a scratch copy never stays on the phone.
 
 ## How injection works (read before editing inject.js)
@@ -63,8 +73,18 @@ Don't use `adb exec-out screencap > file` in PowerShell 5.1: its pipeline corrup
 - The ad hooks only work if they're installed before YouTube's first player response, which is why the document-start run matters.
 - `HIDE_OPEN_APP` in the Kotlin file runs independently of inject.js, on purpose.
 
+## Working with YouTube's page (learned the hard way)
+
+- **Clicking YouTube's buttons from script:** use `press()` in inject.js, not `el.click()`. Right after a touch, Polymer drops clicks outside the touched element as ghost clicks; `press()` marks the click as coming from a non-touch device, which Polymer lets through.
+- **In-app navigation:** dispatch `yt-navigate` with a `browseEndpoint` (see `go()`). It doesn't reload, and playback continues.
+- **No `innerHTML`:** YouTube enforces Trusted Types. Build DOM with `createElement` / `createElementNS`.
+- **Overriding YouTube's CSS:** its rules are often more specific than a plain element selector. `ytmusic-app-layout` has `id="layout"`, so `#layout > …` outranks them. YouTube's CSS keyframes still apply after they finish and beat normal inline styles: use `setProperty(…, 'important')`. Its `transition: all` beats even `!important`, so turn transitions off where you drive a property per frame.
+- **The player sheet** (`setP` / `settle` in inject.js) draws the player at progress 0 (mini player) to 1 (full player). Frames must only write `transform` and `opacity`: no layout reads, and no CSS variables on `<html>` (those restyle the whole page and dropped drags to ~10 fps). YouTube's open/close costs ~100 ms of main-thread work, so its state is flipped only while the sheet rests at an end, where a frozen frame looks identical. It's portrait-only; landscape keeps YouTube's own animations.
+- **Measure, don't eyeball:** time frames with `requestAnimationFrame` deltas and a `longtask` `PerformanceObserver`. The display runs at 120 Hz while touched.
+
 ## Gotchas
 
+- Git Bash rewrites `/sdcard/...` arguments into Windows paths. Prefix adb commands with `MSYS_NO_PATHCONV=1`.
 - PowerShell 5.1: redirecting a native command's stderr (`2>$null`, `2>&1`) turns its output into error records. With `$ErrorActionPreference = 'Stop'` that throws. `adb shell monkey` writes to stderr, so the scripts use `am start -n` instead.
 - Expected noise in logcat: CORS errors for `googleads.g.doubleclick.net` (it's blocked on purpose) and the `LegacyDataMixin` log line.
 - Check whether an override is still on the device: `adb shell ls /sdcard/Android/data/com.example.taro_music/files/`.
