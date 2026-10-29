@@ -7,7 +7,7 @@ import io.flutter.embedding.engine.FlutterEngine
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        flutterEngine.plugins.add(RiPlayPlugin())
-        startForegroundService(Intent(this, PlaybackService::class.java))
+        flutterEngine.plugins.add(YtmWebViewPlugin())
+        startForegroundService(Intent(this, KeepAliveService::class.java))
     }
 }

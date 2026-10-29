@@ -1,21 +1,20 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// The whole app is the YouTube Music web app in one native WebView
-/// (see `RiPlayWebView.kt`); there is no Flutter UI beyond hosting it.
+/// (see `YtmWebView.kt`); there is no Flutter UI beyond hosting it.
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: _Ytm()));
+  runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: _YtmScreen()));
 }
 
-class _Ytm extends StatefulWidget {
-  const _Ytm();
+class _YtmScreen extends StatefulWidget {
+  const _YtmScreen();
 
   @override
-  State<_Ytm> createState() => _YtmState();
+  State<_YtmScreen> createState() => _YtmScreenState();
 }
 
-class _YtmState extends State<_Ytm> {
+class _YtmScreenState extends State<_YtmScreen> {
   MethodChannel? _web;
 
   @override
@@ -33,11 +32,9 @@ class _YtmState extends State<_Ytm> {
         backgroundColor: Colors.black,
         body: SafeArea(
           child: AndroidView(
-            viewType: 'riplay_webview',
-            creationParams: const <String, Object>{'mode': 'ytm'},
-            creationParamsCodec: const StandardMessageCodec(),
+            viewType: 'ytm_webview',
             onPlatformViewCreated: (id) =>
-                _web = MethodChannel('com.example.taro_music/riplay/$id'),
+                _web = MethodChannel('com.example.taro_music/ytm_webview/$id'),
           ),
         ),
       ),

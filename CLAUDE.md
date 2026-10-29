@@ -2,9 +2,9 @@
 
 An Android-only app that wraps the YouTube Music website (music.youtube.com) in a WebView. It's a Flutter shell, but almost all behaviour lives in:
 
-- `android/app/src/main/kotlin/com/example/taro_music/RiPlayWebView.kt`: WebView setup, ad request blocking, visibility spoofing (keeps audio playing when the screen locks), script injection.
+- `android/app/src/main/kotlin/com/example/taro_music/YtmWebView.kt`: WebView setup, ad request blocking, visibility spoofing (keeps audio playing when the screen locks), script injection.
 - `assets/ytm/inject.js`: CSS/JS injected into the page: ad stripping (JSON.parse / fetch / XHR hooks), hiding upsells, and the mobile UX layer (bottom tab bar, swipe gestures, draggable player sheet).
-- `PlaybackService.kt`: foreground service that keeps the process alive.
+- `KeepAliveService.kt`: foreground service that keeps the process alive. `YtmWebViewPlugin.kt` registers the WebView as a Flutter platform view (`ytm_webview`).
 
 There is no desktop build. The app only runs on a real Android phone over USB, so all debugging goes through `adb`.
 
@@ -19,7 +19,7 @@ There is no desktop build. The app only runs on a real Android phone over USB, s
 
 The hooks check `ApplicationInfo.FLAG_DEBUGGABLE`, not `BuildConfig`.
 
-1. **Console → logcat.** Page `console.*` output and uncaught JS errors go to logcat with tag `RiPlay`.
+1. **Console → logcat.** Page `console.*` output and uncaught JS errors go to logcat with tag `TaroMusic`.
 2. **Remote DevTools.** `WebView.setWebContentsDebuggingEnabled(true)`. The user opens `edge://inspect` or `brave://inspect` (they have no Chrome) to get Elements, Console and Network for the live page.
 3. **inject.js override.** If `/sdcard/Android/data/com.example.taro_music/files/inject.js` exists, the app loads it instead of the bundled asset. Release builds ignore it.
 
@@ -43,7 +43,7 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 **Read logs:**
 ```
 adb logcat -c                      # clear before reproducing
-adb logcat -d -s RiPlay            # dump page console output
+adb logcat -d -s TaroMusic            # dump page console output
 ```
 
 **See and drive the screen:**

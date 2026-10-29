@@ -8,7 +8,7 @@ own UI.
 It is a Flutter shell around a single native `WebView`. Almost everything lives
 in two files:
 
-- [`RiPlayWebView.kt`](android/app/src/main/kotlin/com/example/taro_music/RiPlayWebView.kt):
+- [`YtmWebView.kt`](android/app/src/main/kotlin/com/example/taro_music/YtmWebView.kt):
   WebView setup, ad request blocking, visibility spoofing, script injection.
 - [`assets/ytm/inject.js`](assets/ytm/inject.js): CSS/JS injected into every
   music.youtube.com page.
@@ -23,8 +23,8 @@ in two files:
   drop ad slots and promoted items. A fallback mutes and skips any video ad that
   still slips through.
 - **Background playback.** YouTube pauses on the `visibilitychange` event when
-  the screen locks. The WebView always reports itself visible (the "RiPlay
-  trick"), and a foreground service keeps the process alive.
+  the screen locks. The WebView always reports itself visible, and a foreground
+  service keeps the process alive.
 - **No upsells.** "Get the app" banners and "Open app" buttons are hidden.
 - **Sign-in works.** The WebView's `wv` user-agent token, which Google uses to
   refuse sign-in, is stripped. Cookies persist across restarts.
@@ -75,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File tool/dev-js.ps1          # push inject.
 powershell -ExecutionPolicy Bypass -File tool/dev-js.ps1 -Reset   # remove the override
 ```
 
-Debug builds also send page `console.*` output to logcat (`adb logcat -s RiPlay`)
+Debug builds also send page `console.*` output to logcat (`adb logcat -s TaroMusic`)
 and enable remote DevTools (`edge://inspect` or `chrome://inspect`). See
 [CLAUDE.md](CLAUDE.md) for the full on-device debugging workflow and the
 gotchas of working with YouTube's page.

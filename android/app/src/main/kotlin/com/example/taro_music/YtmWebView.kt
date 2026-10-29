@@ -1,4 +1,4 @@
-﻿package com.example.taro_music
+package com.example.taro_music
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
@@ -23,10 +23,10 @@ import java.io.ByteArrayInputStream
  *
  * It also lies to Chromium about its visibility. YouTube pauses playback on the
  * `visibilitychange` DOM event, which would fire when the screen locks; always
- * reporting "visible" keeps audio running. [PlaybackService] keeps the process
+ * reporting "visible" keeps audio running. [KeepAliveService] keeps the process
  * alive.
  */
-class RiPlayWebView(context: Context) : WebView(context) {
+class YtmWebView(context: Context) : WebView(context) {
 
     private val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
@@ -49,9 +49,9 @@ class RiPlayWebView(context: Context) : WebView(context) {
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         webChromeClient = object : WebChromeClient() {
-            // Page console output → `adb logcat -s RiPlay`.
+            // Page console output → `adb logcat -s TaroMusic`.
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
-                Log.d("RiPlay", "${m.messageLevel()} ${m.message()} (${m.sourceId()}:${m.lineNumber()})")
+                Log.d("TaroMusic", "${m.messageLevel()} ${m.message()} (${m.sourceId()}:${m.lineNumber()})")
                 return true
             }
         }

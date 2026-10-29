@@ -8,7 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 
 /** Only keeps the process alive so the WebView keeps playing with the screen off. */
-class PlaybackService : Service() {
+class KeepAliveService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel("playback", "Playback", NotificationManager.IMPORTANCE_LOW),

@@ -1,5 +1,5 @@
-// Injected into every music.youtube.com page by RiPlayWebView.loadYtm().
-// Edit this file to change the UX; no Kotlin rebuild logic is involved.
+// Injected into every music.youtube.com page by YtmWebView.kt (at document start, and
+// again from onPageStarted as a fallback). Edit this file to change the UX.
 (function () {
   if (window.__taroYtm) return;
   window.__taroYtm = true;
@@ -23,17 +23,7 @@
     // "Open app" button (mobile web).
     '.app-install-link, a[href^="https://app.music.youtube.com"], .open-app-button,ytmusic-open-app-button, a[href*="app.adjust"], a[href^="intent://"], a[href*="play.google.com/store/apps/details?id=com.google.android.apps.youtube.music"] { display: none !important; }',
   ].join('\n'));
-
-  // Fallback that also reaches into shadow roots, where the page-level CSS above can't.
-  function hideOpenApp(root) {
-    root.querySelectorAll('*').forEach(function (el) {
-      if (el.shadowRoot) hideOpenApp(el.shadowRoot);
-      if (el.matches('.app-install-link, a[href^="https://app.music.youtube.com"]')) {
-        el.style.setProperty('display', 'none', 'important');
-      }
-    });
-  }
-  setInterval(function () { hideOpenApp(document); }, 500);
+  // The same buttons inside shadow roots are hidden by HIDE_OPEN_APP in YtmWebView.kt.
 
   // ---- Ads: rewrite YouTube's JSON (the approach NouTube uses). -------------
   var AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
@@ -148,7 +138,7 @@
     // Sheet mode (see setP): the player drawn part-way between mini and full, with the page behind visible.
     'html.taro-sheet #content, html.taro-sheet ytmusic-nav-bar, html.taro-sheet ytmusic-player-page { visibility: visible !important; }',
     'html.taro-sheet #taro-nav { display: flex !important; z-index: 7; }',
-    // The mini bar fades out above the rising page; the art shows through its empty thumbnail slot.
+    // The mini bar fades out above the rising page, over its own grey (#taro-shade).
     // #layout (YouTube's id for ytmusic-app-layout) outranks YouTube's open-state rule that pins the bar to the bottom.
     'html.taro-sheet #layout > ytmusic-player-bar { visibility: visible !important; bottom: ' + NAV_H + 'px !important;' +
       ' z-index: 7 !important; background: transparent !important; transition: none !important; pointer-events: none; }',

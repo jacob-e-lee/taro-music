@@ -1,4 +1,4 @@
-﻿package com.example.taro_music
+package com.example.taro_music
 
 import android.content.Context
 import android.view.View
@@ -10,19 +10,22 @@ import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 
-class RiPlayWebViewFactory(
+// The view type and channel name must match `lib/main.dart`.
+private const val VIEW_TYPE = "ytm_webview"
+
+private class YtmWebViewFactory(
     private val messenger: BinaryMessenger,
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView =
-        RiPlayPlatformView(
-            RiPlayWebView(context),
-            MethodChannel(messenger, "com.example.taro_music/riplay/$viewId"),
+        YtmPlatformView(
+            YtmWebView(context),
+            MethodChannel(messenger, "com.example.taro_music/$VIEW_TYPE/$viewId"),
         )
 }
 
-private class RiPlayPlatformView(
-    private val webView: RiPlayWebView,
+private class YtmPlatformView(
+    private val webView: YtmWebView,
     private val channel: MethodChannel,
 ) : PlatformView, MethodChannel.MethodCallHandler {
 
@@ -47,12 +50,9 @@ private class RiPlayPlatformView(
 }
 
 /** Registers the factory with the engine. Wired up from `MainActivity`. */
-class RiPlayPlugin : FlutterPlugin {
+class YtmWebViewPlugin : FlutterPlugin {
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        binding.platformViewRegistry.registerViewFactory(
-            "riplay_webview",
-            RiPlayWebViewFactory(binding.binaryMessenger),
-        )
+        binding.platformViewRegistry.registerViewFactory(VIEW_TYPE, YtmWebViewFactory(binding.binaryMessenger))
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {}
