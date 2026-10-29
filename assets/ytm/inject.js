@@ -116,18 +116,30 @@
 
   // ---- Mobile UX: no tap flash, bottom tabs, swipe gestures. ----------------
   var NAV_H = 48;
+  // The page runs under the phone's status bar (main.dart); this is that bar's height.
+  var TOP = 'env(safe-area-inset-top, 0px)';
   // Full-player parts that fade in as it opens (the artwork morphs instead).
   var FADE = '.background-image, .background-gradient, #side-panel, #main-panel > :not(#music-player-wrapper)';
   addStyle([
     // Inherited, so this also reaches into shadow roots.
     'html, * { -webkit-tap-highlight-color: transparent !important; }',
-    // A slimmer top bar (YouTube's is 64px); its contents and the page below follow this variable.
-    'html { --ytmusic-nav-bar-height: 48px !important; }',
+    // A slimmer top bar (YouTube's is 64px), below the status bar: the page below follows this
+    // variable, and the bar's background extends up behind the status bar.
+    'html { --ytmusic-nav-bar-height: calc(48px + ' + TOP + ') !important; }',
+    'ytmusic-nav-bar { top: ' + TOP + ' !important; height: 48px !important; }',
+    // The full player keeps its content below the status bar too. Its layout is sized from
+    // --ytmusic-player-page-inner-height (YouTube sets it to the window height); in the queue view
+    // YouTube's own art placement already allows for the shift, so leave it there.
+    '#player-page #main-panel { top: ' + TOP + ' !important; height: calc(100% - ' + TOP + ') !important; }',
+    '#player-page #side-panel { top: calc(64px + ' + TOP + ') !important; }',
+    '#player-page > .content { padding-top: ' + TOP + ' !important; }',
+    'ytmusic-app-layout[player-page-open] ytmusic-player-page:not([player-page-ui-state=TABS_VIEW]),' +
+      ' html.taro-sheet ytmusic-player-page { --ytmusic-player-page-inner-height: calc(100dvh - ' + TOP + ') !important; }',
     // Pull the chip rows (Home's moods, Library's filters) up under the top bar.
     'ytmusic-browse-response ytmusic-chip-cloud-chip-renderer { padding-top: 8px !important; }',
     'ytmusic-browse-response #header > ytmusic-side-aligned-item-renderer { margin-top: 0 !important; }',
     '#taro-nav { position: fixed; left: 0; right: 0; bottom: 0; height: ' + NAV_H + 'px; z-index: 4;' +
-      ' display: flex; background: #030303; border-top: 1px solid rgba(255,255,255,.1); }',
+      ' display: flex; background: rgb(33,33,33); }',  // the mini player's grey
     '#taro-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;' +
       ' gap: 1px; background: none; border: 0; color: #aaa; font: 500 11px Roboto, sans-serif; }',
     '#taro-nav button[active] { color: #fff; }',
@@ -149,6 +161,19 @@
     // The mini player's artwork is the real #player, pinned 8px from the bottom.
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { bottom: ' + (NAV_H + 8) + 'px !important; }',
     'ytmusic-app-layout > #content { margin-bottom: ' + NAV_H + 'px; }',
+    // The mini player's progress line moves to its bottom edge, as the divider above the tabs.
+    // It's display-only there (disabled), so its 31px slider box mustn't take taps from the tabs.
+    'ytmusic-app-layout > ytmusic-player-bar #progress-bar { top: auto !important; bottom: -15px !important;' +
+      ' transform: none !important; pointer-events: none; }',
+    // Search: the open box covers the whole top bar, flush and borderless. [is-mobile-view] and the
+    // nav-bar ancestor outrank YouTube's own `margin-left: 16px !important`.
+    'ytmusic-nav-bar ytmusic-search-box[is-mobile-view]:is([opened], [has-query]) { position: fixed !important;' +
+      ' inset: ' + TOP + ' 0 auto 0 !important; margin: 0 !important; width: auto !important; height: 48px !important;' +
+      ' border: 0 !important; border-radius: 0 !important; }',
+    'ytmusic-search-box:is([opened], [has-query]) :is(.search-container, .search-box) { height: 48px !important;' +
+      ' border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }',
+    'ytmusic-search-box:is([opened], [has-query]) #suggestion-list { left: 0 !important; right: 0 !important;' +
+      ' width: auto !important; top: 48px !important; border: 0 !important; border-radius: 0 !important; }',
     // Our swipes own these areas; otherwise the browser pans the page underneath.
     '#player-page #main-panel, #player-page #player, ytmusic-app-layout > ytmusic-player-bar { touch-action: none; }',
     // Sheet mode (see setP): the player drawn part-way between mini and full, with the page behind visible.
@@ -177,6 +202,13 @@
     // Mini-bar grey over the player's black, faded out as it opens.
     '#taro-shade { position: absolute; inset: 0; background: rgb(33,33,33); pointer-events: none; }',
     'html:not(.taro-sheet) #taro-shade { display: none; }',
+    // Keyboard up (see onViewport): no tabs, and the mini player sits right on the keyboard.
+    // Last, so these win over the sheet rules above.
+    'html.taro-kb #taro-nav, html.taro-kb #taro-new { display: none !important; }',
+    'html.taro-kb ytmusic-app-layout:not([player-page-open]) > ytmusic-player-bar, html.taro-kb #player-bar-background,' +
+      ' html.taro-kb.taro-sheet #layout > ytmusic-player-bar { bottom: 0 !important; }',
+    // YouTube collapses the art to max-height 0 in a short viewport.
+    'html.taro-kb ytmusic-app-layout:not([player-page-open]) #player-page #player { bottom: 8px !important; max-height: none !important; }',
   ].join('\n'));
 
   var TABS = [
@@ -229,6 +261,12 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
   else buildNav();
 
+  // The keyboard shrinks the viewport (the activity uses adjustResize) to well under the screen.
+  var keyboardUp = function () { return !!window.visualViewport && visualViewport.height < screen.height * 0.75; };
+  if (window.visualViewport) visualViewport.addEventListener('resize', function () {
+    document.documentElement.classList.toggle('taro-kb', keyboardUp());
+  });
+
   // Not el.click(): right after a touch, Polymer drops clicks outside the touched element
   // as ghost clicks, unless the click says it came from a non-touch device.
   function press(sel) {
@@ -278,7 +316,10 @@
   }
   // The mini bar's top. innerHeight is rounded (693 for a 693.67px viewport), which would
   // leave the art a device pixel or two off YouTube's.
-  var sheetTop = function () { return (window.visualViewport ? visualViewport.height : innerHeight) - NAV_H - BAR_H; };
+  // With the keyboard up there are no tabs under it.
+  var sheetTop = function () {
+    return (window.visualViewport ? visualViewport.height : innerHeight) - (keyboardUp() ? 0 : NAV_H) - BAR_H;
+  };
   // To whole device pixels, where YouTube's own art is painted; a GPU-moved layer isn't snapped.
   var snap = function (v) { return Math.round(v * devicePixelRatio) / devicePixelRatio; };
   var clamp = function (v) { return Math.min(1, Math.max(0, v)); };
