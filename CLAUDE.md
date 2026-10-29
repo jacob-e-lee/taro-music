@@ -5,6 +5,7 @@ An Android-only app that wraps the YouTube Music website (music.youtube.com) in 
 - `android/app/src/main/kotlin/com/example/taro_music/YtmWebView.kt`: WebView setup, ad request blocking, visibility spoofing (keeps audio playing when the screen locks), script injection.
 - `assets/ytm/inject.js`: CSS/JS injected into the page: ad stripping (JSON.parse / fetch / XHR hooks), hiding upsells, and the mobile UX layer (bottom tab bar, swipe gestures, draggable player sheet).
 - `KeepAliveService.kt`: foreground service that keeps the process alive. `YtmWebViewPlugin.kt` registers the WebView as a Flutter platform view (`ytm_webview`).
+- `lib/main.dart`: hosts that platform view and forwards Android Back to the WebView's history over the `com.example.taro_music/ytm_webview/<id>` channel. The view type and channel name must match `YtmWebViewPlugin.kt`.
 
 There is no desktop build. The app only runs on a real Android phone over USB, so all debugging goes through `adb`.
 
@@ -43,7 +44,7 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 **Read logs:**
 ```
 adb logcat -c                      # clear before reproducing
-adb logcat -d -s TaroMusic            # dump page console output
+adb logcat -d -s TaroMusic         # dump page console output
 ```
 
 **See and drive the screen:**
@@ -71,7 +72,7 @@ Then connect to `ws://localhost:9222/devtools/browser` (Node 22 has a global `We
 - `window.__taroYtm` makes the second run a no-op. So **any exception thrown after line 5 on the first run silently disables everything below it**, including the ad hooks. Keep the top of the script exception-free.
 - At document start, `document.documentElement` can be `null`. DOM writes must wait for it (see `addStyle()`).
 - The ad hooks only work if they're installed before YouTube's first player response, which is why the document-start run matters.
-- `HIDE_OPEN_APP` in the Kotlin file runs independently of inject.js, on purpose.
+- "Open app" buttons inside shadow roots (which inject.js's CSS can't reach) are hidden only by `HIDE_OPEN_APP` in `YtmWebView.kt`. It runs independently of inject.js on purpose, so a stale override on the phone can't bring the button back.
 
 ## Working with YouTube's page (learned the hard way)
 
