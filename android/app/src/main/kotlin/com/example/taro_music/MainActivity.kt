@@ -1,14 +1,13 @@
-﻿package com.example.taro_music
+package com.example.taro_music
 
-import com.ryanheise.audioservice.AudioServiceActivity
+import android.content.Intent
+import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
-class MainActivity : AudioServiceActivity() {
+class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // Registers the `riplay_webview` platform-view factory. It has to be
-        // added here rather than declared in pubspec: the view lives in this
-        // app's own Android source, not in a plugin package.
         flutterEngine.plugins.add(RiPlayPlugin())
+        startForegroundService(Intent(this, PlaybackService::class.java))
     }
 }
