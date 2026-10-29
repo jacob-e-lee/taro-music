@@ -126,8 +126,18 @@
     '#taro-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;' +
       ' gap: 2px; background: none; border: 0; color: #aaa; font: 500 11px Roboto, sans-serif; }',
     '#taro-nav button[active] { color: #fff; }',
-    '#taro-nav svg { width: 24px; height: 24px; fill: currentColor; }',
+    // A key press (e.g. Escape) would otherwise leave a blue focus ring on the tapped tab.
+    '#taro-nav button, #taro-new { outline: none; }',
+    '#taro-nav svg, #taro-new svg { width: 24px; height: 24px; fill: currentColor; }',
     'body:has(ytmusic-app-layout[player-page-open]) #taro-nav { display: none; }',
+    // The tabs replace the drawer; its one extra, "New playlist", moves to the Library tab.
+    'ytmusic-nav-bar #guide-button { display: none !important; }',
+    '#taro-new { position: fixed; right: 16px; bottom: ' + (NAV_H + 16) + 'px; z-index: 4; display: none; align-items: center;' +
+      ' gap: 8px; height: 48px; padding: 0 20px 0 16px; border: 0; border-radius: 24px; background: #fff; color: #030303;' +
+      ' font: 500 14px Roboto, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.4); }',
+    '#taro-new[shown] { display: flex; }',
+    'body:has(ytmusic-app-layout[player-visible]) #taro-new { bottom: ' + (NAV_H + 64 + 16) + 'px; }',
+    'body:has(ytmusic-app-layout[player-page-open]) #taro-new, html.taro-sheet #taro-new { display: none !important; }',
     // Lift the mini player above the tabs, and leave room to scroll past both.
     'ytmusic-app-layout:not([player-page-open]) > ytmusic-player-bar, #player-bar-background { bottom: ' + NAV_H + 'px !important; }',
     // The mini player's artwork is the real #player, pinned 8px from the bottom.
@@ -175,28 +185,39 @@
       bubbles: true, composed: true, detail: { endpoint: { browseEndpoint: { browseId: browseId } } },
     }));
   }
+  // A button with an icon and a label. DOM calls, not innerHTML: YouTube enforces Trusted Types.
+  function iconButton(label, d, onClick) {
+    var b = document.createElement('button');
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
+    b.appendChild(svg);
+    b.appendChild(document.createTextNode(label));
+    b.addEventListener('click', onClick);
+    return b;
+  }
   function buildNav() {
-    // DOM calls, not innerHTML: YouTube enforces Trusted Types.
     var nav = document.createElement('nav');
     nav.id = 'taro-nav';
     TABS.forEach(function (t) {
-      var b = document.createElement('button');
+      var b = iconButton(t[0], t[3], function () { go(t[2]); });
       b.dataset.path = t[1];
-      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 24 24');
-      var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      p.setAttribute('d', t[3]);
-      svg.appendChild(p);
-      b.appendChild(svg);
-      b.appendChild(document.createTextNode(t[0]));
-      b.addEventListener('click', function () { go(t[2]); });
       nav.appendChild(b);
     });
     document.body.appendChild(nav);
+    // Opens YouTube's own dialog via the (hidden) drawer's "New playlist" button.
+    var add = iconButton('New playlist', 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z', function () {
+      press('#guide-wrapper ytmusic-guide-section-renderer #buttons yt-button-renderer button');
+    });
+    add.id = 'taro-new';
+    document.body.appendChild(add);
     setInterval(function () {
       nav.querySelectorAll('button').forEach(function (b) {
         b.toggleAttribute('active', b.dataset.path === location.pathname);
       });
+      add.toggleAttribute('shown', location.pathname === '/library');
     }, 300);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
