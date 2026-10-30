@@ -6,12 +6,14 @@ keeps playing with the screen locked, and mobile gestures on top of the site's
 own UI.
 
 It is a Flutter shell around a single native `WebView`. Almost everything lives
-in two files:
+in a few files:
 
 - [`YtmWebView.kt`](android/app/src/main/kotlin/com/example/taro_music/YtmWebView.kt):
   WebView setup, ad request blocking, visibility spoofing, script injection.
 - [`assets/ytm/inject.js`](assets/ytm/inject.js): CSS/JS injected into every
   music.youtube.com page.
+- [`MediaControls.kt`](android/app/src/main/kotlin/com/example/taro_music/MediaControls.kt):
+  the Android media session and notification.
 
 > **Platform status:** Android only. There are no iOS, desktop or web targets.
 
@@ -26,15 +28,26 @@ in two files:
   the screen locks. The WebView always reports itself visible, and a foreground
   service keeps the process alive.
 - **No upsells.** "Get the app" banners and "Open app" buttons are hidden.
+- **Media controls.** The notification shade and lock screen show the current
+  track with its cover and a seekable progress bar; play/pause, next, previous and
+  headset or Bluetooth buttons control the app.
 - **Sign-in works.** The WebView's `wv` user-agent token, which Google uses to
   refuse sign-in, is stripped. Cookies persist across restarts.
 - **Mobile UX:**
   - A Home / Explore / Library bottom tab bar, with the mini player above it.
   - Swipe the mini player or the full player's artwork left or right to skip.
-  - Drag the player up from the mini player and down to close it. The page
-    follows your finger at the display's refresh rate, and the album art morphs
-    between the thumbnail and full size. Tapping the mini player, the chevron and
-    the Back button use the same animation (portrait only).
+  - Drag the player up from the mini player (or its art) and down to close it.
+    The page follows your finger at the display's refresh rate, and the album art
+    (or the live picture, for music videos) morphs between the thumbnail and full
+    size. Tapping the mini player, the chevron and the Back button use the same
+    animation (portrait only).
+  - The app draws edge to edge: the page's colours continue behind the status bar
+    and the navigation buttons.
+  - A slimmer top bar and tab bar; the hamburger menu is replaced by the tabs and a
+    "New playlist" button on Library.
+  - Search: the back arrow stays visible; it first clears the box (reopening the
+    keyboard), then closes search. The keyboard covers the page instead of
+    shrinking it, so nothing jumps.
   - No blue tap-highlight flash.
 
 ## How it works
@@ -48,6 +61,9 @@ in two files:
   `opacity` each frame. YouTube's own open/close does roughly 100 ms of
   main-thread work, so it is flipped only once the sheet has come to rest, where
   a frozen frame is invisible.
+- **Media controls.** The WebView has no Media Session API, so `inject.js`
+  reports the track and playback state to `MediaControls.kt` through an
+  origin-restricted web message listener, and runs the commands that come back.
 - **Back button.** Flutter forwards Back to the WebView's history, and only exits
   the app when there is none left.
 
@@ -82,12 +98,10 @@ gotchas of working with YouTube's page.
 
 ## Known gaps
 
-- The media notification is a plain "keep alive" notification. There are no
-  lock-screen or headset media controls yet.
 - The gestures and tab bar rely on YouTube Music's current page structure, so a
   site redesign can break them.
-- In music-video mode, the artwork morph shows the cover image and may not line
-  up with the video box.
+- With the keyboard covering the page, text fields low on the screen (such as
+  the "New playlist" dialog's) can end up behind it.
 - The Android `applicationId` is still the template placeholder
   `com.example.taro_music`. Change it before any release.
 
