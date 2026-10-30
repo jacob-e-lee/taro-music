@@ -118,6 +118,9 @@
   var NAV_H = 48;
   // The page runs under the phone's status bar (main.dart); this is that bar's height.
   var TOP = 'env(safe-area-inset-top, 0px)';
+  // ...and under its navigation bar: the tabs (and the player's black) extend behind it.
+  var BOT = 'env(safe-area-inset-bottom, 0px)';
+  var NAVB = 'calc(' + NAV_H + 'px + ' + BOT + ')';  // tabs plus the navigation bar below them
   // Full-player parts that fade in as it opens (the artwork morphs instead).
   var FADE = '.background-image, .background-gradient, #side-panel, #main-panel > :not(#music-player-wrapper)';
   addStyle([
@@ -130,16 +133,18 @@
     // The full player keeps its content below the status bar too. Its layout is sized from
     // --ytmusic-player-page-inner-height (YouTube sets it to the window height); in the queue view
     // YouTube's own art placement already allows for the shift, so leave it there.
-    '#player-page #main-panel { top: ' + TOP + ' !important; height: calc(100% - ' + TOP + ') !important; }',
+    '#player-page #main-panel { top: ' + TOP + ' !important; height: calc(100% - ' + TOP + ' - ' + BOT + ') !important; }',
     '#player-page #side-panel { top: calc(64px + ' + TOP + ') !important; }',
     '#player-page > .content { padding-top: ' + TOP + ' !important; }',
+    // ...while its blurred background and darkening gradient start at the very top, under the status bar.
+    '#player-page :is(.background-image, .background-gradient) { top: 0 !important; }',
     'ytmusic-app-layout[player-page-open] ytmusic-player-page:not([player-page-ui-state=TABS_VIEW]),' +
-      ' html.taro-sheet ytmusic-player-page { --ytmusic-player-page-inner-height: calc(100dvh - ' + TOP + ') !important; }',
+      ' html.taro-sheet ytmusic-player-page { --ytmusic-player-page-inner-height: calc(100dvh - ' + TOP + ' - ' + BOT + ') !important; }',
     // Pull the chip rows (Home's moods, Library's filters) up under the top bar.
     'ytmusic-browse-response ytmusic-chip-cloud-chip-renderer { padding-top: 8px !important; }',
     'ytmusic-browse-response #header > ytmusic-side-aligned-item-renderer { margin-top: 0 !important; }',
-    '#taro-nav { position: fixed; left: 0; right: 0; bottom: 0; height: ' + NAV_H + 'px; z-index: 4;' +
-      ' display: flex; background: rgb(33,33,33); }',  // the mini player's grey
+    '#taro-nav { position: fixed; left: 0; right: 0; bottom: 0; height: ' + NAVB + '; padding-bottom: ' + BOT + ';' +
+      ' box-sizing: border-box; z-index: 4; display: flex; background: rgb(33,33,33); }',  // the mini player's grey
     '#taro-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;' +
       ' gap: 1px; background: none; border: 0; color: #aaa; font: 500 11px Roboto, sans-serif; }',
     '#taro-nav button[active] { color: #fff; }',
@@ -150,17 +155,19 @@
     'body:has(ytmusic-app-layout[player-page-open]) #taro-nav { display: none; }',
     // The tabs replace the drawer; its one extra, "New playlist", moves to the Library tab.
     'ytmusic-nav-bar #guide-button { display: none !important; }',
-    '#taro-new { position: fixed; right: 16px; bottom: ' + (NAV_H + 16) + 'px; z-index: 4; display: none; align-items: center;' +
+    '#taro-new { position: fixed; right: 16px; bottom: calc(' + (NAV_H + 16) + 'px + ' + BOT + '); z-index: 4; display: none; align-items: center;' +
       ' gap: 8px; height: 48px; padding: 0 20px 0 16px; border: 0; border-radius: 24px; background: #fff; color: #030303;' +
       ' font: 500 14px Roboto, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.4); }',
     '#taro-new[shown] { display: flex; }',
-    'body:has(ytmusic-app-layout[player-visible]) #taro-new { bottom: ' + (NAV_H + 64 + 16) + 'px; }',
+    '#taro-fit { position: fixed; left: 0; right: 0; top: ' + TOP + '; bottom: ' + BOT + '; visibility: hidden; pointer-events: none; }',
+    'body:has(ytmusic-app-layout[player-visible]) #taro-new { bottom: calc(' + (NAV_H + 64 + 16) + 'px + ' + BOT + '); }',
     'body:has(ytmusic-app-layout[player-page-open]) #taro-new, html.taro-sheet #taro-new { display: none !important; }',
     // Lift the mini player above the tabs, and leave room to scroll past both.
-    'ytmusic-app-layout:not([player-page-open]) > ytmusic-player-bar, #player-bar-background { bottom: ' + NAV_H + 'px !important; }',
+    'ytmusic-app-layout:not([player-page-open]) > ytmusic-player-bar, #player-bar-background { bottom: ' + NAVB + ' !important; }',
     // The mini player's artwork is the real #player, pinned 8px from the bottom.
+    // (Measured from the player's main panel, which already stops above the navigation bar.)
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { bottom: ' + (NAV_H + 8) + 'px !important; }',
-    'ytmusic-app-layout > #content { margin-bottom: ' + NAV_H + 'px; }',
+    'ytmusic-app-layout > #content { margin-bottom: ' + NAVB + '; }',
     // The mini player's progress line moves to its bottom edge, as the divider above the tabs.
     // It's display-only there (disabled), so its 31px slider box mustn't take taps from the tabs.
     'ytmusic-app-layout > ytmusic-player-bar #progress-bar { top: auto !important; bottom: -15px !important;' +
@@ -181,7 +188,7 @@
     'html.taro-sheet #taro-nav { display: flex !important; z-index: 7; }',
     // The mini bar fades out above the rising page, over its own grey (#taro-shade).
     // #layout (YouTube's id for ytmusic-app-layout) outranks YouTube's open-state rule that pins the bar to the bottom.
-    'html.taro-sheet #layout > ytmusic-player-bar { visibility: visible !important; bottom: ' + NAV_H + 'px !important;' +
+    'html.taro-sheet #layout > ytmusic-player-bar { visibility: visible !important; bottom: ' + NAVB + ' !important;' +
       ' z-index: 7 !important; background: transparent !important; transition: none !important; }',
     // YouTube hides the bar's contents while its player is open; keep them for the sheet's mini end.
     'html.taro-sheet #layout > ytmusic-player-bar > * { visibility: inherit !important; }',
@@ -251,11 +258,25 @@
     });
     add.id = 'taro-new';
     document.body.appendChild(add);
+    // YouTube's menus (Polymer dropdowns) fit themselves into the window, which now runs under
+    // the system bars; fit them into this box between the bars instead.
+    var fit = document.createElement('div');
+    fit.id = 'taro-fit';
+    document.body.appendChild(fit);
+    var fitMenus = function (root) {
+      root.querySelectorAll('tp-yt-iron-dropdown').forEach(function (d) { d.fitInto = fit; });
+    };
+    var menus = null;
     setInterval(function () {
       nav.querySelectorAll('button').forEach(function (b) {
         b.toggleAttribute('active', b.dataset.path === location.pathname);
       });
       add.toggleAttribute('shown', location.pathname === '/library');
+      // YouTube adds its dropdowns to this container as menus are first opened.
+      if (!menus && (menus = document.querySelector('ytmusic-popup-container'))) {
+        fitMenus(menus);
+        new MutationObserver(function () { fitMenus(menus); }).observe(menus, { childList: true });
+      }
     }, 300);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
@@ -311,14 +332,19 @@
     document.documentElement.classList.add('taro-sheet');
     return {
       pg: pg, art: art, shade: shade, bar: document.querySelector(MINI), nav: document.getElementById('taro-nav'),
-      fades: [].slice.call(pg.querySelectorAll(FADE)), top: sheetTop(), full: full,
+      fades: [].slice.call(pg.querySelectorAll(FADE)), top: sheetTop(), navH: navSpace(), full: full,
     };
   }
+  // Height of the tabs plus the phone's navigation bar under them (the tabs' bottom padding);
+  // with the keyboard up, neither is under the mini bar.
+  var navSpace = function () {
+    var nav = document.getElementById('taro-nav');
+    return keyboardUp() || !nav ? 0 : NAV_H + (parseFloat(getComputedStyle(nav).paddingBottom) || 0);
+  };
   // The mini bar's top. innerHeight is rounded (693 for a 693.67px viewport), which would
   // leave the art a device pixel or two off YouTube's.
-  // With the keyboard up there are no tabs under it.
   var sheetTop = function () {
-    return (window.visualViewport ? visualViewport.height : innerHeight) - (keyboardUp() ? 0 : NAV_H) - BAR_H;
+    return (window.visualViewport ? visualViewport.height : innerHeight) - navSpace() - BAR_H;
   };
   // To whole device pixels, where YouTube's own art is painted; a GPU-moved layer isn't snapped.
   var snap = function (v) { return Math.round(v * devicePixelRatio) / devicePixelRatio; };
@@ -340,7 +366,7 @@
       // Touchable while the sheet shows the mini end, so it can be dragged again right away.
       g.bar.style.pointerEvents = p < 0.5 ? '' : 'none';
     }
-    if (g.nav) g.nav.style.transform = 'translate3d(0,' + p * NAV_H + 'px,0)';
+    if (g.nav) g.nav.style.transform = 'translate3d(0,' + p * g.navH + 'px,0)';
   }
   function endSheet() {
     geo = null;
@@ -457,7 +483,7 @@
     }
     // Follow the finger so the gesture feels physical.
     if (d.axis === 'x' && d.zone === 'art') document.querySelector('#player-page #player').style.transform = 'translateX(' + d.dx + 'px)';
-    var top = sheetTop();
+    var top = geo ? geo.top : sheetTop();
     if (d.sheet) {
       // Touch events can outpace the display; draw once per frame.
       d.p = clamp(d.p0 - d.dy / top);

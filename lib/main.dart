@@ -9,9 +9,8 @@ void main() {
   );
 }
 
-// The app draws under the phone's bars (Android forces edge-to-edge): the page under the
-// status bar, the grey strip below under the navigation bar. Light icons for both dark
-// backgrounds, and no contrast scrims, which Android would otherwise darken them with.
+// The app draws under the phone's bars (Android forces edge-to-edge). Light icons for the
+// page's dark backgrounds, and no contrast scrims, which Android would otherwise darken them with.
 const _systemBars = SystemUiOverlayStyle(
   statusBarColor: Colors.transparent,
   statusBarIconBrightness: Brightness.light,
@@ -47,31 +46,18 @@ class _YtmScreenState extends State<_YtmScreen> {
         value: _systemBars,
         child: Scaffold(
           backgroundColor: Colors.black,
-          body: Column(
-            children: [
-              // The page extends under the status bar and keeps its own content below it
-              // (inject.js reads the height from env(safe-area-inset-top)).
-              Expanded(
-                child: SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: AndroidView(
-                    viewType: 'ytm_webview',
-                    onPlatformViewCreated: (id) => _web = MethodChannel(
-                      'com.example.taro_music/ytm_webview/$id',
-                    ),
-                  ),
-                ),
+          // The page runs under both system bars, so whatever it shows (the tab bar's grey,
+          // the player's black) continues behind them. inject.js keeps its content clear of
+          // them using env(safe-area-inset-top / -bottom).
+          body: SafeArea(
+            top: false,
+            bottom: false,
+            child: AndroidView(
+              viewType: 'ytm_webview',
+              onPlatformViewCreated: (id) => _web = MethodChannel(
+                'com.example.taro_music/ytm_webview/$id',
               ),
-              // Behind the phone's navigation bar: the grey of the page's tab bar (inject.js).
-              const ColoredBox(
-                color: Color(0xFF212121),
-                child: SafeArea(
-                  top: false,
-                  child: SizedBox(width: double.infinity),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
