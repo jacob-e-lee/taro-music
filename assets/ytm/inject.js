@@ -200,10 +200,10 @@
     'html.taro-sheet ytmusic-player-page { will-change: transform; transition: none !important; }',
     'html.taro-sheet #taro-nav, html.taro-sheet ytmusic-app-layout > ytmusic-player-bar, html.taro-sheet #taro-shade,' +
       ' html.taro-sheet #player-page :is(' + FADE + ') { will-change: transform, opacity; }',
-    // A full-size copy of the cover morphs instead of YouTube's #player, whose size and place
-    // change with YouTube's open/closed layout (and a small one would blur when scaled up).
+    // A full-size copy of the cover (or video) morphs instead of YouTube's #player, whose size and
+    // place change with YouTube's open/closed layout (and a small one would blur when scaled up).
     '#taro-art { position: fixed; left: 0; top: 0; z-index: 8; pointer-events: none; transform-origin: 0 0;' +
-      ' will-change: transform; object-fit: cover; border-radius: 4px; }',
+      ' will-change: transform; border-radius: 4px; }',
     'html:not(.taro-sheet) #taro-art { display: none; }',
     'html.taro-sheet #player-page #player { opacity: 0 !important; }',
     // Mini-bar grey over the player's black, faded out as it opens.
@@ -320,19 +320,33 @@
       pg.insertBefore(shade, pg.firstChild);
     }
     if (!art) {
-      art = document.createElement('img');
+      art = document.createElement('canvas');
       art.id = 'taro-art';
       document.body.appendChild(art);
     }
-    if (art.src !== img.currentSrc) art.src = img.currentSrc;
-    pg.style.transform = '';
-    // shortcut: assumes square art centred in its wrapper; in video mode the morph ends in the wrong box.
-    var w = wrap.getBoundingClientRect(), full = { x: w.x + (w.width - w.height) / 2, y: w.y, w: w.height };
-    art.style.width = art.style.height = full.w + 'px';
+    // Sheet mode first: it sets the full player's size, which the wrapper below is measured at.
     document.documentElement.classList.add('taro-sheet');
+    pg.style.transform = '';
+    // In video mode (music videos) the cover is a placeholder and the picture is the <video>,
+    // drawn live each frame. A cross-origin video can still be drawn; only reading pixels is blocked.
+    var video = pg.hasAttribute('video-mode') && pg.querySelector('#song-video video');
+    if (video && !video.videoWidth) video = null;
+    var ar = video ? video.videoWidth / video.videoHeight : 1;
+    // YouTube fits the picture (square cover or 16:9 video) inside the wrapper, and inside a 48px box
+    // in the mini player.
+    var w = wrap.getBoundingClientRect(), fw = Math.min(w.width, w.height * ar), mw = Math.min(48, 48 * ar);
+    var full = { x: w.x + (w.width - fw) / 2, y: w.y + (w.height - fw / ar) / 2, w: fw, h: fw / ar };
+    var mini = { x: 16 + (48 - mw) / 2, dy: 8 + (48 - mw / ar) / 2, w: mw };
+    art.style.width = full.w + 'px';
+    art.style.height = full.h + 'px';
+    art.width = Math.round(full.w * devicePixelRatio);
+    art.height = Math.round(full.h * devicePixelRatio);
+    var ctx = art.getContext('2d');
+    if (!video) ctx.drawImage(img, 0, 0, art.width, art.height);
     return {
-      pg: pg, art: art, shade: shade, bar: document.querySelector(MINI), nav: document.getElementById('taro-nav'),
-      fades: [].slice.call(pg.querySelectorAll(FADE)), top: sheetTop(), navH: navSpace(), full: full,
+      pg: pg, art: art, ctx: ctx, video: video, shade: shade, bar: document.querySelector(MINI),
+      nav: document.getElementById('taro-nav'), fades: [].slice.call(pg.querySelectorAll(FADE)),
+      top: sheetTop(), navH: navSpace(), full: full, mini: mini,
     };
   }
   // Height of the tabs plus the phone's navigation bar under them (the tabs' bottom padding);
@@ -353,11 +367,13 @@
     var g = geo || (geo = measure());
     if (!g) return;
     sheetP = p;
-    var f = g.full, size = 48 + (f.w - 48) * p, x = 16 + (f.x - 16) * p, y = g.top + 8 + (f.y - g.top - 8) * p;
+    var f = g.full, m = g.mini, size = m.w + (f.w - m.w) * p, x = m.x + (f.x - m.x) * p,
+      y = g.top + m.dy + (f.y - g.top - m.dy) * p;
     g.pg.style.transform = 'translate3d(0,' + snap((1 - p) * g.top) + 'px,0)';
     g.art.style.transform = 'translate3d(' + snap(x) + 'px,' + snap(y) + 'px,0) scale(' + size / f.w + ')';
     // YouTube rounds the art 4px at both sizes; undo the scale so the corners stay 4px on screen.
     g.art.style.borderRadius = 4 * f.w / size + 'px';
+    if (g.video) g.ctx.drawImage(g.video, 0, 0, g.art.width, g.art.height);
     g.shade.style.opacity = 1 - p;
     // !important: YouTube's finished slide-up animation still holds the bar's opacity, and animations beat inline styles.
     g.fades.forEach(function (el) { el.style.setProperty('opacity', clamp(p * 2 - 1), 'important'); });
