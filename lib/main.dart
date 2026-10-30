@@ -46,6 +46,8 @@ class _YtmScreenState extends State<_YtmScreen> {
         value: _systemBars,
         child: Scaffold(
           backgroundColor: Colors.black,
+          // The keyboard covers the page instead of shrinking it, so nothing jumps when it opens.
+          resizeToAvoidBottomInset: false,
           // The page runs under both system bars, so whatever it shows (the tab bar's grey,
           // the player's black) continues behind them. inject.js keeps its content clear of
           // them using env(safe-area-inset-top / -bottom).

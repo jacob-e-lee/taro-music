@@ -118,8 +118,10 @@
   var NAV_H = 48;
   // The page runs under the phone's status bar (main.dart); this is that bar's height.
   var TOP = 'env(safe-area-inset-top, 0px)';
-  // ...and under its navigation bar: the tabs (and the player's black) extend behind it.
-  var BOT = 'env(safe-area-inset-bottom, 0px)';
+  // ...and under its navigation bar: the tabs (and the player's black) extend behind it. The keyboard
+  // zeroes this inset while it's up; --taro-bot keeps the keyboard-down value (see keepBottomInset)
+  // so the tabs and mini player don't jump when it opens.
+  var BOT = 'var(--taro-bot, env(safe-area-inset-bottom, 0px))';
   var NAVB = 'calc(' + NAV_H + 'px + ' + BOT + ')';  // tabs plus the navigation bar below them
   // Full-player parts that fade in as it opens (the artwork morphs instead).
   var FADE = '.background-image, .background-gradient, #side-panel, #main-panel > :not(#music-player-wrapper)';
@@ -179,6 +181,8 @@
       ' border: 0 !important; border-radius: 0 !important; }',
     'ytmusic-search-box:is([opened], [has-query]) :is(.search-container, .search-box) { height: 48px !important;' +
       ' border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }',
+    // YouTube hides the back arrow once a search has run and the box loses focus; keep it (see onSearchBack).
+    'ytmusic-search-box[has-query]:not([opened]) .search-button { display: inline-block !important; }',
     'ytmusic-search-box:is([opened], [has-query]) #suggestion-list { left: 0 !important; right: 0 !important;' +
       ' width: auto !important; top: 48px !important; border: 0 !important; border-radius: 0 !important; }',
     // Our swipes own these areas; otherwise the browser pans the page underneath.
@@ -209,13 +213,6 @@
     // Mini-bar grey over the player's black, faded out as it opens.
     '#taro-shade { position: absolute; inset: 0; background: rgb(33,33,33); pointer-events: none; }',
     'html:not(.taro-sheet) #taro-shade { display: none; }',
-    // Keyboard up (see onViewport): no tabs, and the mini player sits right on the keyboard.
-    // Last, so these win over the sheet rules above.
-    'html.taro-kb #taro-nav, html.taro-kb #taro-new { display: none !important; }',
-    'html.taro-kb ytmusic-app-layout:not([player-page-open]) > ytmusic-player-bar, html.taro-kb #player-bar-background,' +
-      ' html.taro-kb.taro-sheet #layout > ytmusic-player-bar { bottom: 0 !important; }',
-    // YouTube collapses the art to max-height 0 in a short viewport.
-    'html.taro-kb ytmusic-app-layout:not([player-page-open]) #player-page #player { bottom: 8px !important; max-height: none !important; }',
   ].join('\n'));
 
   var TABS = [
@@ -282,11 +279,48 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
   else buildNav();
 
-  // The keyboard shrinks the viewport (the activity uses adjustResize) to well under the screen.
-  var keyboardUp = function () { return !!window.visualViewport && visualViewport.height < screen.height * 0.75; };
-  if (window.visualViewport) visualViewport.addEventListener('resize', function () {
-    document.documentElement.classList.toggle('taro-kb', keyboardUp());
-  });
+  function keepBottomInset() {
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position: fixed; visibility: hidden; padding-bottom: env(safe-area-inset-bottom, 0px);';
+    document.body.appendChild(probe);
+    var update = function () {
+      // Only while the keyboard is down (it shrinks the visual viewport, not the window).
+      if (visualViewport.height < innerHeight - 50) return;
+      document.documentElement.style.setProperty('--taro-bot', getComputedStyle(probe).paddingBottom);
+    };
+    update();
+    visualViewport.addEventListener('resize', update);
+  }
+  if (window.visualViewport) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', keepBottomInset);
+    else keepBottomInset();
+  }
+
+  // Search's back arrow: with text in the box it clears it and reopens the keyboard. With the box
+  // empty, YouTube's own arrow runs, which just closes the search.
+  function onSearchBack(e) {
+    var arrow = e.target.closest && e.target.closest(
+      'ytmusic-nav-bar ytmusic-search-box:is([opened], [has-query]) .search-button');  // closed, it's the search icon
+    var box = arrow && arrow.closest('ytmusic-search-box'), input = box && box.querySelector('#input');
+    if (!input) return;
+    if (!input.value) {
+      // On search results YouTube's close puts the query back in the bar ([has-query]). Show the plain
+      // bar (logo, search icon, profile) instead; the query stays in the box for when search reopens.
+      if (location.pathname === '/search') {
+        var frames = 20;
+        (function closed() {
+          if (!box.hasAttribute('opened') && box.hasQuery) return void (box.hasQuery = false);
+          if (--frames) requestAnimationFrame(closed);
+        })();
+      }
+      return;
+    }
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    press('ytmusic-nav-bar ytmusic-search-box #clear-button');
+    input.focus();
+  }
+  document.addEventListener('click', onSearchBack, true);
 
   // Not el.click(): right after a touch, Polymer drops clicks outside the touched element
   // as ghost clicks, unless the click says it came from a non-touch device.
@@ -349,11 +383,10 @@
       top: sheetTop(), navH: navSpace(), full: full, mini: mini,
     };
   }
-  // Height of the tabs plus the phone's navigation bar under them (the tabs' bottom padding);
-  // with the keyboard up, neither is under the mini bar.
+  // Height of the tabs plus the phone's navigation bar under them (the tabs' bottom padding).
   var navSpace = function () {
     var nav = document.getElementById('taro-nav');
-    return keyboardUp() || !nav ? 0 : NAV_H + (parseFloat(getComputedStyle(nav).paddingBottom) || 0);
+    return !nav ? 0 : NAV_H + (parseFloat(getComputedStyle(nav).paddingBottom) || 0);
   };
   // The mini bar's top. innerHeight is rounded (693 for a 693.67px viewport), which would
   // leave the art a device pixel or two off YouTube's.
