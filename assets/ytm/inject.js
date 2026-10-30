@@ -526,4 +526,42 @@
   }
   document.addEventListener('touchend', release, { capture: true, passive: true });
   document.addEventListener('touchcancel', release, { capture: true, passive: true });
+
+  // ---- Android media controls (MediaControls.kt): report what's playing, run its commands. ----
+  // TaroMedia exists only in the YouTube Music page (YtmWebView.kt).
+  if (window.TaroMedia) {
+    var lastKey = '';
+    var report = function (force) {
+      var v = document.querySelector('video'), bar = document.querySelector(MINI);
+      var title = bar && bar.querySelector('.title');
+      if (!v || !title || !title.textContent.trim()) return;
+      var img = bar.querySelector('img.image'), byline = bar.querySelector('.byline');
+      var s = {
+        title: title.textContent.trim(),
+        artist: byline ? byline.textContent.trim().split(' • ')[0] : '',
+        // The bar's 60px thumbnail; ask Google's image server for a sharper one.
+        art: img && /^https:/.test(img.currentSrc) ? img.currentSrc.replace(/=w\d+-h\d+/, '=w544-h544') : '',
+        playing: !v.paused,
+        position: Math.round(v.currentTime * 1000),
+        duration: isFinite(v.duration) ? Math.round(v.duration * 1000) : 0,
+      };
+      var key = [s.title, s.artist, s.art, s.playing, s.duration].join('|');
+      if (!force && key === lastKey) return;  // Android extrapolates the position while playing
+      lastKey = key;
+      TaroMedia.postMessage(JSON.stringify(s));
+    };
+    // Media events don't bubble, but a capturing listener on the document still sees them.
+    ['play', 'pause', 'seeked', 'durationchange'].forEach(function (type) {
+      document.addEventListener(type, function () { report(true); }, true);
+    });
+    setInterval(function () { report(false); }, 1000);
+    window.__taroMedia = function (command, arg) {
+      var v = document.querySelector('video');
+      if (command === 'next') next();
+      else if (command === 'prev') prev();
+      else if (v && command === 'play') v.play();
+      else if (v && command === 'pause') v.pause();
+      else if (v && command === 'seek') v.currentTime = arg / 1000;
+    };
+  }
 })();

@@ -45,6 +45,7 @@ private class YtmPlatformView(
 
     override fun dispose() {
         channel.setMethodCallHandler(null)
+        MediaControls.runInPage = null  // don't call into a destroyed WebView
         webView.destroy()
     }
 }

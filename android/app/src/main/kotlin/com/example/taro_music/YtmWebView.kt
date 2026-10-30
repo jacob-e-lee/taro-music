@@ -82,6 +82,16 @@ class YtmWebView(context: Context) : WebView(context) {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(this, script, setOf("https://music.youtube.com"))
         }
+        // Playback state for the media notification and lock screen. Only the YouTube Music
+        // origin gets the `TaroMedia` object, so no other frame can post to it.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(this, "TaroMedia", setOf("https://music.youtube.com")) { _, message, _, _, _ ->
+                MediaControls.update(context, message.data ?: return@addWebMessageListener)
+            }
+        }
+        MediaControls.runInPage = { command, arg ->
+            evaluateJavascript("window.__taroMedia && __taroMedia('$command', $arg)", null)
+        }
         loadUrl("https://music.youtube.com")
     }
 
