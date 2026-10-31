@@ -175,7 +175,7 @@
       ' overflow-y: auto; overscroll-behavior: contain; max-height: 75vh; padding-bottom: ' + BOT + '; box-sizing: border-box; }',
     // Swiping up on a sheet that has more to show first grows it to the top of the screen (see dragSheet).
     'tp-yt-iron-dropdown.taro-menu #contentWrapper { transition: max-height .25s; }',
-    'tp-yt-iron-dropdown.taro-menu.taro-tall #contentWrapper { max-height: calc(100vh - ' + TOP + ' - 24px); }',
+    'tp-yt-iron-dropdown.taro-menu.taro-tall #contentWrapper { max-height: calc(100vh - ' + TOP + '); }',
     'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: block; overflow: visible !important; max-height: none !important;' +
       ' width: auto !important; max-width: none !important; background: none; box-shadow: none; }',
     'tp-yt-iron-dropdown.taro-menu #items { border: 0 !important; outline: none; width: auto; }',
