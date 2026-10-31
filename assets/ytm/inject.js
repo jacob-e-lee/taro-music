@@ -173,6 +173,9 @@
     '@keyframes taro-menu-up { from { transform: translateY(100%); } }',
     'tp-yt-iron-dropdown.taro-menu #contentWrapper { background: rgb(33,33,33); border-radius: 16px 16px 0 0;' +
       ' overflow-y: auto; overscroll-behavior: contain; max-height: 75vh; padding-bottom: ' + BOT + '; box-sizing: border-box; }',
+    // Swiping up on a sheet that has more to show first grows it to the top of the screen (see dragSheet).
+    'tp-yt-iron-dropdown.taro-menu #contentWrapper { transition: max-height .25s; }',
+    'tp-yt-iron-dropdown.taro-menu.taro-tall #contentWrapper { max-height: calc(100vh - ' + TOP + ' - 24px); }',
     'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: block; overflow: visible !important; max-height: none !important;' +
       ' width: auto !important; max-width: none !important; background: none; box-shadow: none; }',
     'tp-yt-iron-dropdown.taro-menu #items { border: 0 !important; outline: none; width: auto; }',
@@ -394,6 +397,10 @@
       var y = e.touches[0].clientY;
       if (!drag) {
         if (list.scrollTop > 0) { y0 = y; t0 = e.timeStamp; return; }  // scrolling: start over from here
+        if (y - y0 < -6 && !dd.classList.contains('taro-tall') && list.scrollHeight > list.clientHeight) {
+          dd.classList.add('taro-tall');
+          e.preventDefault();  // this swipe grows the sheet; the next one scrolls it
+        }
         if (y - y0 < 6) return;
         drag = true;
         dd.style.transition = scrim.style.transition = 'none';
@@ -434,11 +441,12 @@
         if (!dd.__taroDrag) { dd.__taroDrag = true; dragSheet(dd); }
         dd.noCancelOnOutsideClick = true;  // the scrim's tap closes it, with the slide
         sheet = dd;
+        dd.classList.remove('taro-tall');
         dd.classList.add('taro-menu');
         scrim.classList.add('on');
       } else {
         if (sheet === dd) sheet = null;
-        dd.classList.remove('taro-menu');
+        dd.classList.remove('taro-menu', 'taro-tall');
         if (scrim) scrim.classList.remove('on');
       }
     }).observe(dd, { attributes: true, attributeFilter: ['aria-hidden'] });
