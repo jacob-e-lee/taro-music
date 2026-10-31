@@ -459,7 +459,15 @@
     t.appendChild(document.createElement('span'));
     var like = svgButton(HEART, function () {
       var item = likeItem(m);
-      if (item) { item.__taroOn = !item.__taroOn; press(item); setLike(like, item.__taroOn); }
+      if (item) {
+        item.__taroOn = !item.__taroOn;
+        // YouTube closes the menu after any item; liking should leave it open.
+        var dd = m.closest('tp-yt-iron-dropdown');
+        dd.close = function () {};
+        setTimeout(function () { delete dd.close; }, 400);
+        press(item);
+        setLike(like, item.__taroOn);
+      }
     });
     h.appendChild(t);
     h.appendChild(like);
@@ -490,7 +498,7 @@
     scrim.style.opacity = '';
     dd.style.transition = 'transform .2s ease-in';
     dd.style.transform = 'translateY(100%)';
-    setTimeout(function () { dd.close(); dd.style.transition = dd.style.transform = ''; }, 200);
+    setTimeout(function () { delete dd.close; dd.close(); dd.style.transition = dd.style.transform = ''; }, 200);
   }
   // Dragging down anywhere on the sheet closes it, unless the sheet is scrolled (then it scrolls back first).
   // Touch events, not pointer events: only a cancelable touchmove can stop the list from scrolling.
