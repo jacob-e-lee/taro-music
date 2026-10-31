@@ -169,6 +169,10 @@
     ':is(ytmusic-responsive-list-item-renderer, ytmusic-player-queue-item, ytmusic-menu-navigation-item-renderer,' +
       ' ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)[taro-pressed] {' +
       ' opacity: 1 !important; background: rgba(255,255,255,.12); }',
+    // A list row's highlight reaches halfway to the rows above and below (--taro-half, set when pressed), with rounded corners.
+    'ytmusic-responsive-list-item-renderer[taro-pressed] { background: none; isolation: isolate; }',
+    'ytmusic-responsive-list-item-renderer[taro-pressed]::before { content: ""; position: absolute; z-index: -1;' +
+      ' inset: calc(-1 * var(--taro-half, 8px)) -8px; border-radius: 12px; background: rgba(255,255,255,.12); }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
     '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
       ' transition: opacity .25s; }',
@@ -353,7 +357,15 @@
     if (!t) return;
     px = e.clientX; py = e.clientY;
     // A beat of delay, so a flick that scrolls at once doesn't flash.
-    pressTimer = setTimeout(function () { pressed = t; t.setAttribute('taro-pressed', ''); }, 60);
+    pressTimer = setTimeout(function () {
+      pressed = t;
+      var o = t.nextElementSibling || t.previousElementSibling;  // the row beside it, to find the gap
+      if (o && o.localName === t.localName) {
+        var a = t.getBoundingClientRect(), b = o.getBoundingClientRect();
+        t.style.setProperty('--taro-half', Math.max(0, (Math.abs(b.top - a.top) - a.height) / 2) + 'px');
+      }
+      t.setAttribute('taro-pressed', '');
+    }, 60);
     pressed = null;
   }, true);
   document.addEventListener('pointermove', function (e) {
