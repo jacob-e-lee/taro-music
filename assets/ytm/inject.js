@@ -171,14 +171,14 @@
       ' bottom: 0 !important; width: auto !important; max-width: none !important; max-height: none !important;' +
       ' animation: taro-menu-up .25s cubic-bezier(.2,.8,.2,1); }',
     '@keyframes taro-menu-up { from { transform: translateY(100%); } }',
-    'tp-yt-iron-dropdown.taro-menu #contentWrapper { background: rgb(33,33,33); border-radius: 16px 16px 0 0; overflow: hidden;' +
-      ' display: flex; flex-direction: column; max-height: 75vh; padding-bottom: ' + BOT + '; box-sizing: border-box; }',
-    'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: flex; flex-direction: column; min-height: 0;' +
+    'tp-yt-iron-dropdown.taro-menu #contentWrapper { background: rgb(33,33,33); border-radius: 16px 16px 0 0;' +
+      ' overflow-y: auto; overscroll-behavior: contain; max-height: 75vh; padding-bottom: ' + BOT + '; box-sizing: border-box; }',
+    'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: block; overflow: visible !important; max-height: none !important;' +
       ' width: auto !important; max-width: none !important; background: none; box-shadow: none; }',
-    'tp-yt-iron-dropdown.taro-menu #items { overflow-y: auto; min-height: 0; border: 0 !important; outline: none; width: auto; }',
+    'tp-yt-iron-dropdown.taro-menu #items { border: 0 !important; outline: none; width: auto; }',
     '.taro-liked-item { display: none !important; }',
-    '#taro-mh { flex: none; display: flex; align-items: center; gap: 4px; padding: 20px 4px 8px 16px; position: relative;' +
-      ' touch-action: none; border-bottom: 1px solid rgba(255,255,255,.1); }',
+    '#taro-mh { display: flex; align-items: center; gap: 4px; padding: 20px 4px 8px 16px; position: relative;' +
+      ' border-bottom: 1px solid rgba(255,255,255,.1); }',
     '#taro-mh::before { content: ""; position: absolute; top: 8px; left: 50%; width: 36px; height: 4px; margin-left: -18px;' +
       ' border-radius: 2px; background: rgba(255,255,255,.3); }',
     '#taro-mh div { flex: 1; min-width: 0; color: #fff; font: 500 16px Roboto, sans-serif; }',
@@ -383,10 +383,10 @@
     dd.style.transform = 'translateY(100%)';
     setTimeout(function () { dd.close(); dd.style.transition = dd.style.transform = ''; }, 200);
   }
-  // Dragging down anywhere on the sheet closes it, unless the list is scrolled (then it scrolls).
+  // Dragging down anywhere on the sheet closes it, unless the sheet is scrolled (then it scrolls back first).
   // Touch events, not pointer events: only a cancelable touchmove can stop the list from scrolling.
   function dragSheet(dd) {
-    var list = dd.querySelector('#items'), y0 = 0, dy = 0, t0 = 0, drag = false;
+    var list = dd.querySelector('#contentWrapper'), y0 = 0, dy = 0, t0 = 0, drag = false;
     dd.addEventListener('touchstart', function (e) {
       y0 = e.touches[0].clientY; t0 = e.timeStamp; dy = 0; drag = false;
     }, { passive: true });
