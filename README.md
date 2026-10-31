@@ -48,6 +48,15 @@ in a few files:
   - Search: the back arrow stays visible; it first clears the box (reopening the
     keyboard), then closes search. The keyboard covers the page instead of
     shrinking it, so nothing jumps.
+  - The song menu (3-dots or long-press) is a bottom sheet: it slides up over a
+    dimmed page, shows the song, artist, a like button and a close button, and
+    closes by dragging down from anywhere on it. The whole panel scrolls as one
+    and grows to the top for long menus.
+  - Touch feedback on buttons, cards, rows, chips and menu items: they dim or
+    highlight while pressed, even if the finger then drags away. Song rows get a
+    rounded highlight reaching halfway to the next row.
+  - Input feels native: no text selection or link dragging, and a long hold or a
+    drifting finger is not a tap.
   - No blue tap-highlight flash.
 
 ## How it works
