@@ -180,6 +180,11 @@
       ' inset: calc(-1 * var(--taro-t, 8px)) var(--taro-r, -8px) calc(-1 * var(--taro-b, 8px)) var(--taro-l, -8px);' +
       ' border-radius: 12px; background: rgba(255,255,255,.12); animation: taro-fade-in .3s; }',
     '@keyframes taro-fade-in { from { opacity: 0; } }',
+    // YouTube's tap ripple is a sharp-cornered rectangle; our press highlight replaces it (a quick tap shows that too).
+    ':is(ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item,' +
+      ' ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)' +
+      ' tp-yt-paper-ripple { display: none !important; }',
+    'ytmusic-responsive-list-item-renderer[taro-leaving]::before { opacity: 0; transition: opacity .2s; }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
     '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
       ' transition: opacity .25s; }',
@@ -352,11 +357,43 @@
   var CARD = 'ytmusic-two-row-item-renderer, ytmusic-responsive-list-item-renderer, ytmusic-chip-cloud-chip-renderer,' +
     ' ytmusic-player-queue-item, ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer,' +
     ' ytmusic-toggle-menu-service-item-renderer, tp-yt-paper-item, ytmusic-guide-entry-renderer';
-  var pressed = null, pressTimer = 0, px = 0, py = 0;
-  function unpress() {
+  var pressed = null, pressTarget = null, pressTimer = 0, px = 0, py = 0;
+  // A quick tap (up before the delay) still shows the highlight, for a moment, in place of YouTube's ripple.
+  function unpress(e) {
+    var quick = pressTarget && !pressed && e && e.type === 'pointerup';
     clearTimeout(pressTimer);
     if (pressed) pressed.removeAttribute('taro-pressed');
     pressed = null;
+    if (quick) {
+      var t = pressTarget;
+      showPress(t);
+      setTimeout(function () { t.setAttribute('taro-leaving', ''); }, 250);
+      setTimeout(function () {
+        t.removeAttribute('taro-pressed'); t.removeAttribute('taro-leaving');
+        if (pressed === t) pressed = null;
+      }, 450);
+    }
+    pressTarget = null;
+  }
+  function showPress(t) {
+    pressed = t;
+    // Half the gap to the rows above and below (in its own column: a carousel lists its columns one after
+    // another), but no further than the box that clips the column. Same for every row in it, top and bottom.
+    var a = t.getBoundingClientRect(), pr = t.parentElement.getBoundingClientRect();
+    var col = Array.prototype.map.call(t.parentElement.children, function (o) {
+      return o.localName === t.localName && o.getBoundingClientRect();
+    }).filter(function (b) { return b && Math.abs(b.left - a.left) < 2; });
+    var top = Math.min.apply(0, col.map(function (b) { return b.top; })),
+        bot = Math.max.apply(0, col.map(function (b) { return b.bottom; }));
+    var half = col.length > 1 ? Math.max(0, (col[1].top - col[0].bottom) / 2) : 8;
+    var inset = Math.min(half, Math.max(0, Math.min(top - pr.top, pr.bottom - bot))) + 'px';
+    t.style.setProperty('--taro-t', inset);
+    t.style.setProperty('--taro-b', inset);
+    // Reach 8px past the row's content (its padding), which differs from page to page.
+    var cs = getComputedStyle(t);
+    t.style.setProperty('--taro-l', (parseFloat(cs.paddingLeft) - 8) + 'px');
+    t.style.setProperty('--taro-r', (parseFloat(cs.paddingRight) - 8) + 'px');
+    t.setAttribute('taro-pressed', '');
   }
   // Native taps are forgiving of neither a wandering finger nor a long hold: such a touch isn't a tap.
   var downX = 0, downY = 0, downAt = 0;
@@ -384,23 +421,8 @@
     if (!t) return;
     px = e.clientX; py = e.clientY;
     // A beat of delay, so a flick that scrolls at once doesn't flash.
-    pressTimer = setTimeout(function () {
-      pressed = t;
-      // Half the gap to the row above or below (in its own column: a carousel lists its columns one
-      // after another), but no further than the box that clips it.
-      var a = t.getBoundingClientRect(), pr = t.parentElement.getBoundingClientRect(), half = 8;
-      [t.previousElementSibling, t.nextElementSibling].some(function (o) {
-        var b = o && o.localName === t.localName && o.getBoundingClientRect();
-        if (b && Math.abs(b.left - a.left) < 2) return (half = Math.max(0, (Math.abs(b.top - a.top) - a.height) / 2)), true;
-      });
-      t.style.setProperty('--taro-t', Math.min(half, Math.max(0, a.top - pr.top)) + 'px');
-      t.style.setProperty('--taro-b', Math.min(half, Math.max(0, pr.bottom - a.bottom)) + 'px');
-      // Reach 8px past the row's content (its padding), which differs from page to page.
-      var cs = getComputedStyle(t);
-      t.style.setProperty('--taro-l', (parseFloat(cs.paddingLeft) - 8) + 'px');
-      t.style.setProperty('--taro-r', (parseFloat(cs.paddingRight) - 8) + 'px');
-      t.setAttribute('taro-pressed', '');
-    }, 100);
+    pressTarget = t;
+    pressTimer = setTimeout(function () { showPress(t); }, 100);
     pressed = null;
   }, true);
   document.addEventListener('pointermove', function (e) {
