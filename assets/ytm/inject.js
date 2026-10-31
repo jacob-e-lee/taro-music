@@ -346,7 +346,7 @@
   // its layouts, so we flip YouTube's state only while the sheet rests at an end, where a frozen
   // frame looks the same as a live one.
   var coverBox = null;  // YouTube's full-size art box, read with the player at rest (see endSheet)
-  var slideNext = false, miniTapAt = -1e9;  // see the observer
+  var slideNext = false, miniTapAt = -1e9, flippedAt = -1e9;  // see the observer
   // Remember taps on the mini player. On press, not click: after a touch YouTube cancels the click
   // and handles the tap itself.
   document.addEventListener('pointerdown', function (e) {
@@ -509,6 +509,7 @@
   new MutationObserver(function (recs) {
     if (!portrait() || !recs.some(function (r) { return r.target.tagName === 'YTMUSIC-APP-LAYOUT'; })) return;
     quench(10);
+    flippedAt = performance.now();
     if (ours) {
       ours = false;
       // The sheet rests at the end it animated to, so keeping it up costs nothing; give YouTube
@@ -596,7 +597,9 @@
     } else if (d.axis === 'x') {
       if (d.zone === 'art') slide(document.querySelector('#player-page #player'), '', 150);
       if (d.zone !== 'page' && Math.abs(d.dx) > 60) (d.dx < 0 ? next : prev)();
-    } else if (d.grab) settle(sheetP > 0.5 ? 1 : 0);  // a tap on a moving sheet: finish to the nearer end
+    } else if (d.grab) settle(1);  // a tap on a moving sheet (e.g. the mini player while it closes) opens it
+    // Just after YouTube closes its player it ignores taps on the mini player; open it ourselves.
+    else if (d.zone === 'mini' && performance.now() - flippedAt < 600) settle(1);
     else endSheet();  // a tap: drop the sheet set up on touchstart
   }
   document.addEventListener('touchend', release, { capture: true, passive: true });
