@@ -130,6 +130,10 @@
   addStyle([
     // Inherited, so this also reaches into shadow roots.
     'html, * { -webkit-tap-highlight-color: transparent !important; }',
+    // Like a native app: no text selection or long-press callout (except in text fields), nothing draggable.
+    'html { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }',
+    'input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; }',
+    'a, img { -webkit-user-drag: none; }',
     // A slimmer top bar (YouTube's is 64px), below the status bar: the page below follows this
     // variable, and the bar's background extends up behind the status bar.
     'html { --ytmusic-nav-bar-height: calc(48px + ' + TOP + ') !important; }',
@@ -164,15 +168,18 @@
       ' font: 500 14px Roboto, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.4); }',
     '#taro-new[shown] { display: flex; }',
     // Touch feedback (see the press handler): whatever is under a finger dims while it's held.
-    '[taro-pressed] { opacity: .55 !important; transition: opacity .06s; }',
-    'ytmusic-two-row-item-renderer[taro-pressed] { opacity: 1 !important; transform: scale(.96); transition: transform .1s; }',
+    '[taro-pressed] { opacity: .55 !important; transition: opacity .2s; }',
+    'ytmusic-two-row-item-renderer[taro-pressed] { opacity: 1 !important; transform: scale(.96); transition: transform .2s; }',
     ':is(ytmusic-responsive-list-item-renderer, ytmusic-player-queue-item, ytmusic-menu-navigation-item-renderer,' +
       ' ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)[taro-pressed] {' +
-      ' opacity: 1 !important; background: rgba(255,255,255,.12); }',
+      ' opacity: 1 !important; background: rgba(255,255,255,.12); animation: taro-fade .25s; }',
+    '@keyframes taro-fade { from { background-color: transparent; } }',
     // A list row's highlight reaches halfway to the rows above and below (--taro-half, set when pressed), with rounded corners.
     'ytmusic-responsive-list-item-renderer[taro-pressed] { background: none; isolation: isolate; }',
     'ytmusic-responsive-list-item-renderer[taro-pressed]::before { content: ""; position: absolute; z-index: -1;' +
-      ' inset: calc(-1 * var(--taro-half, 8px)) -8px; border-radius: 12px; background: rgba(255,255,255,.12); }',
+      ' inset: calc(-1 * var(--taro-half, 8px)) var(--taro-r, -8px) calc(-1 * var(--taro-half, 8px)) var(--taro-l, -8px);' +
+      ' border-radius: 12px; background: rgba(255,255,255,.12); animation: taro-fade-in .3s; }',
+    '@keyframes taro-fade-in { from { opacity: 0; } }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
     '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
       ' transition: opacity .25s; }',
@@ -351,7 +358,18 @@
     if (pressed) pressed.removeAttribute('taro-pressed');
     pressed = null;
   }
+  // Native taps are forgiving of neither a wandering finger nor a long hold: such a touch isn't a tap.
+  var downX = 0, downY = 0, downAt = 0;
+  window.addEventListener('click', function (e) {
+    if (e.isTrusted && e.pointerType === 'touch' && (e.timeStamp - downAt > 500 ||
+        Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 16)) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true);
+  document.addEventListener('dragstart', function (e) { e.preventDefault(); }, true);
   document.addEventListener('pointerdown', function (e) {
+    downX = e.clientX; downY = e.clientY; downAt = e.timeStamp;
     unpress();
     var t = e.target.closest && (e.target.closest(BUTTON) || e.target.closest(CARD) || e.target.closest('a[href]'));
     if (!t) return;
@@ -364,8 +382,12 @@
         var a = t.getBoundingClientRect(), b = o.getBoundingClientRect();
         t.style.setProperty('--taro-half', Math.max(0, (Math.abs(b.top - a.top) - a.height) / 2) + 'px');
       }
+      // Reach 8px past the row's content (its padding), which differs from page to page.
+      var cs = getComputedStyle(t);
+      t.style.setProperty('--taro-l', (parseFloat(cs.paddingLeft) - 8) + 'px');
+      t.style.setProperty('--taro-r', (parseFloat(cs.paddingRight) - 8) + 'px');
       t.setAttribute('taro-pressed', '');
-    }, 60);
+    }, 100);
     pressed = null;
   }, true);
   document.addEventListener('pointermove', function (e) {
