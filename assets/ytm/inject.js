@@ -180,6 +180,10 @@
       ' inset: calc(-1 * var(--taro-t, 8px)) var(--taro-r, -8px) calc(-1 * var(--taro-b, 8px)) var(--taro-l, -8px);' +
       ' border-radius: 12px; background: rgba(255,255,255,.12); animation: taro-fade-in .3s; }',
     '@keyframes taro-fade-in { from { opacity: 0; } }',
+    // A carousel clips its rows at their edges; give the press highlight 8px more room above and below
+    // (padding that margin cancels, so nothing moves).
+    'ytmusic-carousel#ytmusic-carousel { overflow: clip; overflow-clip-margin: 8px; }',
+    'ytmusic-carousel#ytmusic-carousel > #items { padding-block: 8px; margin-block: -8px; }',
     // YouTube's tap ripple is a sharp-cornered rectangle; our press highlight replaces it (a quick tap shows that too).
     ':is(ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item,' +
       ' ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)' +
