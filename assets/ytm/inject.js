@@ -208,7 +208,11 @@
     // place change with YouTube's open/closed layout (and a small one would blur when scaled up).
     '#taro-art { position: fixed; left: 0; top: 0; z-index: 8; pointer-events: none; transform-origin: 0 0;' +
       ' will-change: transform; }',
-    'html:not(.taro-sheet) #taro-art { display: none; }',
+    'html:not(.taro-sheet) #taro-art, html.taro-slide #taro-art { display: none; }',
+    // Sliding (a picked song): the page comes up whole, YouTube's own art and all.
+    'html.taro-slide #player-page #player { opacity: 1 !important; }',
+    'html.taro-slide #taro-shade { display: none; }',
+    'html.taro-slide #player-page :is(' + FADE + ') { opacity: 1 !important; }',
     'html.taro-sheet #player-page #player { opacity: 0 !important; }',
     // Mini-bar grey over the player's black, faded out as it opens.
     '#taro-shade { position: absolute; inset: 0; background: rgb(33,33,33); pointer-events: none; }',
@@ -341,7 +345,13 @@
   // YouTube's player does ~100 ms of work when it opens or closes. The sheet works in either of
   // its layouts, so we flip YouTube's state only while the sheet rests at an end, where a frozen
   // frame looks the same as a live one.
-  var coverBox = null;  // YouTube's full-size art box, read while the player is open (see measure)
+  var coverBox = null;  // YouTube's full-size art box, read with the player at rest (see endSheet)
+  var slideNext = false, miniTapAt = -1e9;  // see the observer
+  // Remember taps on the mini player. On press, not click: after a touch YouTube cancels the click
+  // and handles the tap itself.
+  document.addEventListener('pointerdown', function (e) {
+    if (e.target.closest && e.target.closest(MINI)) miniTapAt = performance.now();
+  }, true);
   var BAR_H = 64, sheetP = 1, animating = false, ours = false, geo = null;
   // Elements and resting geometry, read once per sheet, so frames only write transforms and opacities.
   function measure() {
@@ -373,9 +383,7 @@
       full = { x: w.x + (w.width - fw) / 2, y: w.y + (w.height - fw / ar) / 2, w: fw, h: fw / ar };
     } else {
       // The cover fills YouTube's #player box (crop, like object-fit: cover), which needn't be square:
-      // read it while the player is open, else use the last reading, else YouTube's layout (32px margins).
-      var pr = isOpen() && document.querySelector('#player-page #player').getBoundingClientRect();
-      if (pr && pr.width > 100) coverBox = { x: pr.x, y: pr.y, w: pr.width, h: pr.height };
+      // the last reading at rest (see endSheet), else YouTube's layout (32px margins).
       var b = coverBox || { x: w.x + 32, y: w.y, w: w.width - 64, h: Math.min(w.width - 64, w.height) };
       var side = Math.max(b.w, b.h);
       full = { x: b.x + (b.w - side) / 2, y: b.y + (b.h - side) / 2, w: side, h: side };
@@ -412,9 +420,26 @@
     var g = geo || (geo = measure());
     if (!g) return;
     sheetP = p;
+    if (g.slide === undefined) {
+      g.slide = slideNext;
+      slideNext = false;
+      document.documentElement.classList.toggle('taro-slide', g.slide);
+    }
+    g.pg.style.transform = 'translate3d(0,' + snap((1 - p) * g.top) + 'px,0)';
+    // Sliding (see the observer below), the page comes up whole: no copy, no fade-in.
+    if (!g.slide) morph(g, p);
+    if (g.bar) {
+      // !important: YouTube's finished slide-up animation still holds the bar's opacity, and animations beat inline styles.
+      g.bar.style.setProperty('opacity', clamp(1 - p * 3), 'important');
+      // Touchable while the sheet shows the mini end, so it can be dragged again right away.
+      g.bar.style.pointerEvents = p < 0.5 ? '' : 'none';
+    }
+    if (g.nav) g.nav.style.transform = 'translate3d(0,' + p * g.navH + 'px,0)';
+  }
+  // The art copy, the grey shade and the fading player parts, at progress p.
+  function morph(g, p) {
     var f = g.full, m = g.mini, size = m.w + (f.w - m.w) * p, x = m.x + (f.x - m.x) * p,
       y = g.top + m.dy + (f.y - g.top - m.dy) * p;
-    g.pg.style.transform = 'translate3d(0,' + snap((1 - p) * g.top) + 'px,0)';
     // Crop to YouTube's art box, growing from none (the square thumbnail) to the full trim, with its 4px
     // corners; both are in the copy's own pixels, so divide out the scale.
     var c = g.clip, k = f.w / size, cx = c.x * p / k, cy = c.y * p / k;  // the trim on screen
@@ -423,18 +448,17 @@
     g.art.style.clipPath = 'inset(' + c.y * p + 'px ' + c.x * p + 'px round ' + 4 * k + 'px)';
     if (g.video) g.ctx.drawImage(g.video, 0, 0, g.art.width, g.art.height);
     g.shade.style.opacity = 1 - p;
-    // !important: YouTube's finished slide-up animation still holds the bar's opacity, and animations beat inline styles.
     g.fades.forEach(function (el) { el.style.setProperty('opacity', clamp(p * 2 - 1), 'important'); });
-    if (g.bar) {
-      g.bar.style.setProperty('opacity', clamp(1 - p * 3), 'important');
-      // Touchable while the sheet shows the mini end, so it can be dragged again right away.
-      g.bar.style.pointerEvents = p < 0.5 ? '' : 'none';
-    }
-    if (g.nav) g.nav.style.transform = 'translate3d(0,' + p * g.navH + 'px,0)';
   }
   function endSheet() {
     geo = null;
-    document.documentElement.classList.remove('taro-sheet');
+    document.documentElement.classList.remove('taro-sheet', 'taro-slide');
+    // The full player at rest: remember its art box. (Mid-open, YouTube briefly makes it full width.)
+    var pg = document.querySelector('ytmusic-player-page');
+    if (isOpen() && pg && !pg.hasAttribute('video-mode')) {
+      var pr = document.querySelector('#player-page #player').getBoundingClientRect();
+      if (pr.x > 0 && pr.width > 100) coverBox = { x: pr.x, y: pr.y, w: pr.width, h: pr.height };
+    }
     document.querySelectorAll('ytmusic-player-page, #taro-nav, ' + MINI + ', #player-page :is(' + FADE + ')')
       .forEach(function (el) { el.style.transform = el.style.opacity = el.style.pointerEvents = ''; });
   }
@@ -492,8 +516,11 @@
       setTimeout(function () { if (!drag && !animating) endSheet(); }, 250);
       return;
     }
-    // Opened or closed by YouTube itself (tap, chevron, back): animate the change.
+    // Opened or closed by YouTube itself (tap, chevron, back): animate the change. Picking a song
+    // opens it too, but YouTube swaps in the new cover only after opening, so a morph would start
+    // from the old one: slide the whole player up instead, its real art changing in place.
     var open = isOpen();
+    slideNext = open && performance.now() - miniTapAt > 1000;
     setP(open ? 0 : 1);
     animateTo(open ? 1 : 0, endSheet, true);
   }).observe(document, { subtree: true, attributes: true, attributeFilter: ['player-page-open'] });
