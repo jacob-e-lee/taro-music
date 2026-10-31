@@ -205,6 +205,8 @@
     'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: block; overflow: visible !important; max-height: none !important;' +
       ' width: auto !important; max-width: none !important; background: none; box-shadow: none; }',
     'tp-yt-iron-dropdown.taro-menu #items { border: 0 !important; outline: none; width: auto; }',
+    // YouTube's own `pressed` state can stick when a touch is dragged away; ours (taro-pressed) replaces it.
+    ':is(ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)[pressed]:not([taro-pressed]) { background: none !important; }',
     '.taro-liked-item { display: none !important; }',
     '#taro-mh { display: flex; align-items: center; gap: 4px; padding: 20px 4px 8px 16px; position: relative;' +
       ' border-bottom: 1px solid rgba(255,255,255,.1); }',
@@ -493,17 +495,27 @@
   // Dragging down anywhere on the sheet closes it, unless the sheet is scrolled (then it scrolls back first).
   // Touch events, not pointer events: only a cancelable touchmove can stop the list from scrolling.
   function dragSheet(dd) {
-    var list = dd.querySelector('#contentWrapper'), y0 = 0, dy = 0, t0 = 0, drag = false;
+    var list = dd.querySelector('#contentWrapper'), y0 = 0, dy = 0, t0 = 0, drag = false, grow = false, h0 = 0, hMax = 0;
     dd.addEventListener('touchstart', function (e) {
-      y0 = e.touches[0].clientY; t0 = e.timeStamp; dy = 0; drag = false;
+      y0 = e.touches[0].clientY; t0 = e.timeStamp; dy = 0; drag = false; grow = false;
     }, { passive: true });
     dd.addEventListener('touchmove', function (e) {
       var y = e.touches[0].clientY;
       if (!drag) {
-        if (list.scrollTop > 0) { y0 = y; t0 = e.timeStamp; return; }  // scrolling: start over from here
-        if (y - y0 < -6 && !dd.classList.contains('taro-tall') && list.scrollHeight > list.clientHeight) {
-          dd.classList.add('taro-tall');
-          e.preventDefault();  // this swipe grows the sheet; the next one scrolls it
+        if (list.scrollTop > 0 && !grow) { y0 = y; t0 = e.timeStamp; return; }  // scrolling: start over from here
+        // A swipe up on a sheet with more to show grows it with the finger, up to the top of the screen.
+        if ((grow || y - y0 < -6) && !dd.classList.contains('taro-tall') && list.scrollHeight > list.clientHeight) {
+          if (!grow) {
+            grow = true;
+            h0 = list.offsetHeight;
+            list.style.transition = 'none';
+            dd.classList.add('taro-tall');
+            hMax = list.offsetHeight;
+            dd.classList.remove('taro-tall');
+          }
+          e.preventDefault();
+          list.style.maxHeight = Math.min(hMax, Math.max(h0, h0 + y0 - y - 6)) + 'px';
+          return;
         }
         if (y - y0 < 6) return;
         drag = true;
@@ -515,6 +527,14 @@
       scrim.style.opacity = 1 - dy / dd.offsetHeight;
     }, { passive: false });
     var up = function (e) {
+      if (grow) {
+        // Past a little way, or a quick flick, it goes the rest of the way; otherwise it settles back.
+        var big = list.offsetHeight - h0 > 40 || (list.offsetHeight - h0) / (e.timeStamp - t0) > 0.3;
+        grow = false;
+        list.style.transition = list.style.maxHeight = '';
+        if (big) dd.classList.add('taro-tall');
+        return;
+      }
       if (!drag) return;
       drag = false;
       dd.style.transition = scrim.style.transition = '';
