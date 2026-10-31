@@ -163,6 +163,30 @@
       ' gap: 8px; height: 48px; padding: 0 20px 0 16px; border: 0; border-radius: 24px; background: #fff; color: #030303;' +
       ' font: 500 14px Roboto, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.4); }',
     '#taro-new[shown] { display: flex; }',
+    // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
+    '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
+      ' transition: opacity .25s; }',
+    '#taro-scrim.on { opacity: 1; pointer-events: auto; }',
+    'tp-yt-iron-dropdown.taro-menu { position: fixed !important; left: 0 !important; right: 0 !important; top: auto !important;' +
+      ' bottom: 0 !important; width: auto !important; max-width: none !important; max-height: none !important;' +
+      ' animation: taro-menu-up .25s cubic-bezier(.2,.8,.2,1); }',
+    '@keyframes taro-menu-up { from { transform: translateY(100%); } }',
+    'tp-yt-iron-dropdown.taro-menu #contentWrapper { background: rgb(33,33,33); border-radius: 16px 16px 0 0; overflow: hidden;' +
+      ' display: flex; flex-direction: column; max-height: 75vh; padding-bottom: ' + BOT + '; box-sizing: border-box; }',
+    'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: flex; flex-direction: column; min-height: 0;' +
+      ' width: auto !important; max-width: none !important; background: none; box-shadow: none; }',
+    'tp-yt-iron-dropdown.taro-menu #items { overflow-y: auto; min-height: 0; border: 0 !important; outline: none; width: auto; }',
+    '.taro-liked-item { display: none !important; }',
+    '#taro-mh { flex: none; display: flex; align-items: center; gap: 4px; padding: 20px 4px 8px 16px; position: relative;' +
+      ' touch-action: none; border-bottom: 1px solid rgba(255,255,255,.1); }',
+    '#taro-mh::before { content: ""; position: absolute; top: 8px; left: 50%; width: 36px; height: 4px; margin-left: -18px;' +
+      ' border-radius: 2px; background: rgba(255,255,255,.3); }',
+    '#taro-mh div { flex: 1; min-width: 0; color: #fff; font: 500 16px Roboto, sans-serif; }',
+    '#taro-mh div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+    '#taro-mh div span + span { color: #aaa; font-size: 14px; font-weight: 400; margin-top: 2px; }',
+    '#taro-mh button { flex: none; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;' +
+      ' background: none; border: 0; outline: none; color: #fff; }',
+    '#taro-mh svg { width: 24px; height: 24px; fill: currentColor; }',
     '#taro-fit { position: fixed; left: 0; right: 0; top: ' + TOP + '; bottom: ' + BOT + '; visibility: hidden; pointer-events: none; }',
     'html.taro-playing #taro-new { bottom: calc(' + (NAV_H + 64 + 16) + 'px + ' + BOT + '); }',
     'html.taro-open #taro-new, html.taro-sheet #taro-new { display: none !important; }',
@@ -270,7 +294,10 @@
     fit.id = 'taro-fit';
     document.body.appendChild(fit);
     var fitMenus = function (root) {
-      root.querySelectorAll('tp-yt-iron-dropdown').forEach(function (d) { d.fitInto = fit; });
+      root.querySelectorAll('tp-yt-iron-dropdown').forEach(function (d) {
+        d.fitInto = fit;
+        watchMenu(d);
+      });
     };
     var menus = null;
     setInterval(function () {
@@ -287,6 +314,129 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
   else buildNav();
+
+  // ---- Song menus as a bottom sheet -----------------------------------------------------
+  // YouTube opens these as a dropdown at the tapped spot. Here the dropdown is restyled (see the CSS)
+  // into a sheet under a bar with the song, its artist, a like button and a close button. Dragging
+  // the bar down, tapping the dimmed page or the close button slides it away.
+  var ROW = 'ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, ytmusic-player-bar';
+  var menuRow = null, scrim = null, sheet = null;  // the row that opened the menu; the dimmer; the open dropdown
+  // The menu doesn't say which song it is for; remember the last row touched (3-dots or long press).
+  document.addEventListener('pointerdown', function (e) {
+    var r = e.target.closest && e.target.closest(ROW);
+    if (r) menuRow = r;
+  }, true);
+  var HEART = 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z';
+  var HEART_ON = 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z';
+  var CLOSE = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
+  function svgButton(d, onClick) {
+    var b = document.createElement('button');
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path')).setAttribute('d', d);
+    b.appendChild(svg);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  var likeItem = function (m) {
+    return Array.prototype.find.call(m.querySelectorAll('ytmusic-toggle-menu-service-item-renderer'),
+      function (t) { return /liked songs/i.test(t.textContent); });
+  };
+  function menuHead(m) {
+    var h = document.createElement('div');
+    h.id = 'taro-mh';
+    var t = document.createElement('div');
+    t.appendChild(document.createElement('span'));
+    t.appendChild(document.createElement('span'));
+    var like = svgButton(HEART, function () {
+      var item = likeItem(m);
+      if (item) { item.__taroOn = !item.__taroOn; press(item); setLike(like, item.__taroOn); }
+    });
+    h.appendChild(t);
+    h.appendChild(like);
+    h.appendChild(svgButton(CLOSE, function () { closeSheet(); }));
+    m.insertBefore(h, m.firstChild);
+    return h;
+  }
+  function setLike(b, on) { b.firstChild.firstChild.setAttribute('d', on ? HEART_ON : HEART); }
+  function fillHead(m) {
+    var h = m.querySelector('#taro-mh') || menuHead(m);
+    var r = menuRow, q = function (s) { var e = r && r.querySelector(s); return e ? e.textContent.trim().replace(/\s+/g, ' ') : ''; };
+    var spans = h.querySelectorAll('span');
+    spans[0].textContent = q('.title');
+    spans[1].textContent = q('.secondary-flex-columns > *').split(' • ')[0] || q('.subtitle') || q('.byline');
+    var item = likeItem(m), like = h.querySelector('button');
+    if (item) {
+      item.classList.add('taro-liked-item');
+      item.__taroOn = !!(item.data && item.data.isToggled);
+      setLike(like, item.__taroOn);
+    }
+    like.style.display = item ? '' : 'none';
+  }
+  function closeSheet() {
+    var dd = sheet;
+    if (!dd) return;
+    sheet = null;
+    scrim.classList.remove('on');
+    scrim.style.opacity = '';
+    dd.style.transition = 'transform .2s ease-in';
+    dd.style.transform = 'translateY(100%)';
+    setTimeout(function () { dd.close(); dd.style.transition = dd.style.transform = ''; }, 200);
+  }
+  function dragSheet(h, dd) {
+    var y0 = null, dy = 0, t0 = 0;
+    h.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('button')) return;
+      y0 = e.clientY; dy = 0; t0 = e.timeStamp;
+      h.setPointerCapture(e.pointerId);
+      dd.style.transition = scrim.style.transition = 'none';
+    });
+    h.addEventListener('pointermove', function (e) {
+      if (y0 == null) return;
+      dy = Math.max(0, e.clientY - y0);
+      dd.style.transform = 'translateY(' + dy + 'px)';
+      scrim.style.opacity = 1 - dy / dd.offsetHeight;
+    });
+    var up = function (e) {
+      if (y0 == null) return;
+      y0 = null;
+      dd.style.transition = scrim.style.transition = '';
+      // Far enough or a quick flick closes; otherwise it springs back.
+      if (dy > dd.offsetHeight / 3 || dy / (e.timeStamp - t0) > 0.5) return closeSheet();
+      dd.style.transition = 'transform .2s';
+      dd.style.transform = '';
+      scrim.style.opacity = '';
+    };
+    h.addEventListener('pointerup', up);
+    h.addEventListener('pointercancel', up);
+  }
+  // Called for each dropdown YouTube adds. `opened` isn't an attribute; Polymer flips aria-hidden with it.
+  function watchMenu(dd) {
+    if (dd.__taroWatched) return;
+    dd.__taroWatched = true;
+    new MutationObserver(function () {
+      var m = dd.querySelector('ytmusic-menu-popup-renderer');
+      if (!m) return;
+      if (dd.opened) {
+        if (!scrim) {
+          scrim = document.createElement('div');
+          scrim.id = 'taro-scrim';
+          scrim.addEventListener('click', closeSheet);
+          document.body.appendChild(scrim);
+        }
+        fillHead(m);
+        if (!m.__taroDrag) { m.__taroDrag = true; dragSheet(m.querySelector('#taro-mh'), dd); }
+        dd.noCancelOnOutsideClick = true;  // the scrim's tap closes it, with the slide
+        sheet = dd;
+        dd.classList.add('taro-menu');
+        scrim.classList.add('on');
+      } else {
+        if (sheet === dd) sheet = null;
+        dd.classList.remove('taro-menu');
+        if (scrim) scrim.classList.remove('on');
+      }
+    }).observe(dd, { attributes: true, attributeFilter: ['aria-hidden'] });
+  }
 
   function keepBottomInset() {
     var probe = document.createElement('div');
@@ -334,7 +484,7 @@
   // Not el.click(): right after a touch, Polymer drops clicks outside the touched element
   // as ghost clicks, unless the click says it came from a non-touch device.
   function press(sel) {
-    var el = document.querySelector(sel);
+    var el = typeof sel === 'string' ? document.querySelector(sel) : sel;
     if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true,
       sourceCapabilities: new InputDeviceCapabilities({ firesTouchEvents: false }) }));
     return !!el;
