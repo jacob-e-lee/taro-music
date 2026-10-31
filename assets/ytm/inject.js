@@ -163,6 +163,12 @@
       ' gap: 8px; height: 48px; padding: 0 20px 0 16px; border: 0; border-radius: 24px; background: #fff; color: #030303;' +
       ' font: 500 14px Roboto, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.4); }',
     '#taro-new[shown] { display: flex; }',
+    // Touch feedback (see the press handler): whatever is under a finger dims while it's held.
+    '[taro-pressed] { opacity: .55 !important; transition: opacity .06s; }',
+    'ytmusic-two-row-item-renderer[taro-pressed] { opacity: 1 !important; transform: scale(.96); transition: transform .1s; }',
+    ':is(ytmusic-responsive-list-item-renderer, ytmusic-player-queue-item, ytmusic-menu-navigation-item-renderer,' +
+      ' ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)[taro-pressed] {' +
+      ' opacity: 1 !important; background: rgba(255,255,255,.12); }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
     '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
       ' transition: opacity .25s; }',
@@ -329,6 +335,31 @@
     var r = e.target.closest && e.target.closest(ROW);
     if (r) menuRow = r;
   }, true);
+  // Touch feedback. A finger that lands on something marks it pressed until it lifts, moves off or the
+  // browser takes the touch over to scroll (pointercancel), so a press that turns into a drag still shows.
+  var BUTTON = 'button, tp-yt-paper-icon-button, yt-icon-button, ytmusic-menu-renderer';
+  var CARD = 'ytmusic-two-row-item-renderer, ytmusic-responsive-list-item-renderer, ytmusic-chip-cloud-chip-renderer,' +
+    ' ytmusic-player-queue-item, ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer,' +
+    ' ytmusic-toggle-menu-service-item-renderer, tp-yt-paper-item, ytmusic-guide-entry-renderer';
+  var pressed = null, pressTimer = 0, px = 0, py = 0;
+  function unpress() {
+    clearTimeout(pressTimer);
+    if (pressed) pressed.removeAttribute('taro-pressed');
+    pressed = null;
+  }
+  document.addEventListener('pointerdown', function (e) {
+    unpress();
+    var t = e.target.closest && (e.target.closest(BUTTON) || e.target.closest(CARD) || e.target.closest('a[href]'));
+    if (!t) return;
+    px = e.clientX; py = e.clientY;
+    // A beat of delay, so a flick that scrolls at once doesn't flash.
+    pressTimer = setTimeout(function () { pressed = t; t.setAttribute('taro-pressed', ''); }, 60);
+    pressed = null;
+  }, true);
+  document.addEventListener('pointermove', function (e) {
+    if (Math.abs(e.clientX - px) + Math.abs(e.clientY - py) > 24) unpress();
+  }, true);
+  ['pointerup', 'pointercancel'].forEach(function (n) { document.addEventListener(n, unpress, true); });
   var HEART = 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z';
   var HEART_ON = 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z';
   var CLOSE = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
