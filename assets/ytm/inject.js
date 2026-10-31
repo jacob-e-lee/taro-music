@@ -104,15 +104,17 @@
   addStyle('.video-ads, .ytp-ad-module, .ytp-ad-overlay-container, ' +
     'ytmusic-player-ad-renderer { display: none !important; }');
 
+  // YouTube marks an ad on its player element; checking that one element's classes is cheap,
+  // where searching the whole page (~13k elements) for the marker 10 times a second was not.
   setInterval(function () {
-    var v = document.querySelector('video');
-    if (!v || !document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay')) return;
+    var p = document.getElementById('movie_player'), v = p && p.querySelector('video');
+    if (!v || !(p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) return;
     v.muted = true;
     v.playbackRate = 16;
     if (isFinite(v.duration) && v.duration > 0) v.currentTime = v.duration;
     var skip = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-modern');
     if (skip) skip.click();
-  }, 100);
+  }, 250);
 
   // ---- Mobile UX: no tap flash, bottom tabs, swipe gestures. ----------------
   var NAV_H = 48;
@@ -154,7 +156,7 @@
     '#taro-nav button, #taro-new { outline: none; }',
     '#taro-nav svg, #taro-new svg { width: 24px; height: 24px; fill: currentColor; }',
     '#taro-nav svg { width: 22px; height: 22px; }',
-    'body:has(ytmusic-app-layout[player-page-open]) #taro-nav { display: none; }',
+    'html.taro-open #taro-nav { display: none; }',
     // The tabs replace the drawer; its one extra, "New playlist", moves to the Library tab.
     'ytmusic-nav-bar #guide-button { display: none !important; }',
     '#taro-new { position: fixed; right: 16px; bottom: calc(' + (NAV_H + 16) + 'px + ' + BOT + '); z-index: 4; display: none; align-items: center;' +
@@ -162,8 +164,8 @@
       ' font: 500 14px Roboto, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.4); }',
     '#taro-new[shown] { display: flex; }',
     '#taro-fit { position: fixed; left: 0; right: 0; top: ' + TOP + '; bottom: ' + BOT + '; visibility: hidden; pointer-events: none; }',
-    'body:has(ytmusic-app-layout[player-visible]) #taro-new { bottom: calc(' + (NAV_H + 64 + 16) + 'px + ' + BOT + '); }',
-    'body:has(ytmusic-app-layout[player-page-open]) #taro-new, html.taro-sheet #taro-new { display: none !important; }',
+    'html.taro-playing #taro-new { bottom: calc(' + (NAV_H + 64 + 16) + 'px + ' + BOT + '); }',
+    'html.taro-open #taro-new, html.taro-sheet #taro-new { display: none !important; }',
     // Lift the mini player above the tabs, and leave room to scroll past both.
     'ytmusic-app-layout:not([player-page-open]) > ytmusic-player-bar, #player-bar-background { bottom: ' + NAVB + ' !important; }',
     // The mini player's artwork is the real #player, pinned 8px from the bottom.
@@ -548,6 +550,13 @@
   }
   // Landscape uses a different player layout; leave YouTube's own animations there.
   var portrait = function () { return innerHeight > innerWidth; };
+  // The player's state, mirrored onto <html> for the rules above (taro-open, taro-playing): a
+  // body:has(...) rule would make the browser re-check styles after every change anywhere in the page.
+  new MutationObserver(function () {
+    var L = document.querySelector('ytmusic-app-layout'), h = document.documentElement;
+    h.classList.toggle('taro-open', !!L && L.hasAttribute('player-page-open'));
+    h.classList.toggle('taro-playing', !!L && L.hasAttribute('player-visible'));
+  }).observe(document, { subtree: true, attributes: true, attributeFilter: ['player-page-open', 'player-visible'] });
   new MutationObserver(function (recs) {
     if (!portrait() || !recs.some(function (r) { return r.target.tagName === 'YTMUSIC-APP-LAYOUT'; })) return;
     quench(10);

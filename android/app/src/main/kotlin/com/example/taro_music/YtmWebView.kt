@@ -110,17 +110,13 @@ class YtmWebView(context: Context) : WebView(context) {
         super.onVisibilityAggregated(true)
 
     private companion object {
+        // A stylesheet, not a periodic DOM walk: YouTube Music uses no shadow roots, so CSS reaches the button.
         val HIDE_OPEN_APP = """
             if (!window.__taroHideOpen) {
               window.__taroHideOpen = true;
-              var hide = function (r) {
-                r.querySelectorAll('*').forEach(function (e) {
-                  if (e.shadowRoot) hide(e.shadowRoot);
-                  if (e.matches('.app-install-link, a[href^="https://app.music.youtube.com"]'))
-                    e.style.setProperty('display', 'none', 'important');
-                });
-              };
-              setInterval(function () { hide(document); }, 500);
+              var s = document.createElement('style');
+              s.textContent = '.app-install-link, a[href^="https://app.music.youtube.com"] { display: none !important; }';
+              document.head.appendChild(s);
             }
         """.trimIndent()
 
