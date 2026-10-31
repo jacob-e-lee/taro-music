@@ -40,7 +40,7 @@ in a few files:
     The page follows your finger at the display's refresh rate, and the album art
     (or the live picture, for music videos) morphs between the thumbnail and full
     size. Tapping the mini player, the chevron and the Back button use the same
-    animation (portrait only).
+    animation (portrait only); picking a song slides the whole player up.
   - The app draws edge to edge: the page's colours continue behind the status bar
     and the navigation buttons.
   - A slimmer top bar and tab bar; the hamburger menu is replaced by the tabs and a
