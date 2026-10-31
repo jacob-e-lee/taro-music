@@ -206,9 +206,12 @@
       ' html.taro-sheet #player-page :is(' + FADE + ') { will-change: transform, opacity; }',
     // A full-size copy of the cover (or video) morphs instead of YouTube's #player, whose size and
     // place change with YouTube's open/closed layout (and a small one would blur when scaled up).
-    '#taro-art { position: fixed; left: 0; top: 0; z-index: 8; pointer-events: none; transform-origin: 0 0;' +
+    '#taro-art, #taro-vid { position: fixed; left: 0; top: 0; z-index: 8; pointer-events: none; transform-origin: 0 0;' +
       ' will-change: transform; }',
-    'html:not(.taro-sheet) #taro-art, html.taro-slide #taro-art { display: none; }',
+    '#taro-vid { object-fit: contain; background: #000; }',  // letterboxed in black, like YouTube's
+    'html:not(.taro-sheet) :is(#taro-art, #taro-vid), html.taro-slide :is(#taro-art, #taro-vid) { display: none; }',
+    // YouTube squares off a music video's box; round it like a cover's, which the copy also is.
+    'ytmusic-player-page[video-mode] #player { border-radius: 4px !important; }',
     // Sliding (a picked song): the page comes up whole, YouTube's own art and all.
     'html.taro-slide #player-page #player { opacity: 1 !important; }',
     'html.taro-slide #taro-shade { display: none; }',
@@ -376,33 +379,73 @@
     // drawn live each frame. A cross-origin video can still be drawn; only reading pixels is blocked.
     var video = pg.hasAttribute('video-mode') && pg.querySelector('#song-video video');
     if (video && !video.videoWidth) video = null;
-    var ar = video ? video.videoWidth / video.videoHeight : 1, w = wrap.getBoundingClientRect(), full, clip = 0;
-    if (video) {
-      // YouTube fits the video inside the wrapper.
-      var fw = Math.min(w.width, w.height * ar);
-      full = { x: w.x + (w.width - fw) / 2, y: w.y + (w.height - fw / ar) / 2, w: fw, h: fw / ar };
-    } else {
-      // The cover fills YouTube's #player box (crop, like object-fit: cover), which needn't be square:
-      // the last reading at rest (see endSheet), else YouTube's layout (32px margins).
-      var b = coverBox || { x: w.x + 32, y: w.y, w: w.width - 64, h: Math.min(w.width - 64, w.height) };
-      var side = Math.max(b.w, b.h);
-      full = { x: b.x + (b.w - side) / 2, y: b.y + (b.h - side) / 2, w: side, h: side };
-      clip = { y: (side - b.h) / 2, x: (side - b.w) / 2 };  // trimmed at the full end, in the copy's own px
-    }
-    // In the mini player, the picture fits a 48px box.
-    var mw = Math.min(48, 48 * ar), mini = { x: 16 + (48 - mw) / 2, dy: 8 + (48 - mw / ar) / 2, w: mw };
+    // The live copy if it's ready, else the canvas (redrawn from the video each frame, below).
+    var live = video && videoCopy();
+    art.style.display = live ? 'none' : '';
+    if (vcopy) vcopy.style.display = live ? '' : 'none';
+    // YouTube's #player box, which needn't be square: for a video, the whole wrapper (the picture
+    // letterboxed in black); for a cover, the last reading at rest (see endSheet), else YouTube's layout
+    // (32px margins). The copy is a square showing the picture as YouTube does (a cover cropped to fill,
+    // a video letterboxed), trimmed to the box at the full end; in the mini player the box is 48px square.
+    var w = wrap.getBoundingClientRect();
+    var b = video ? { x: w.x, y: w.y, w: w.width, h: w.height }
+      : coverBox || { x: w.x + 32, y: w.y, w: w.width - 64, h: Math.min(w.width - 64, w.height) };
+    var side = Math.max(b.w, b.h);
+    var full = { x: b.x + (b.w - side) / 2, y: b.y + (b.h - side) / 2, w: side, h: side };
+    var clip = { y: (side - b.h) / 2, x: (side - b.w) / 2 };  // trimmed at the full end, in the copy's own px
+    var mini = { x: 16, dy: 8, w: 48 };
+    if (live) live.style.width = live.style.height = full.w + 'px';
     art.style.width = full.w + 'px';
     art.style.height = full.h + 'px';
     art.width = Math.round(full.w * devicePixelRatio);
     art.height = Math.round(full.h * devicePixelRatio);
     var ctx = art.getContext('2d');
     if (!video) ctx.drawImage(img, 0, 0, art.width, art.height);
-    return {
-      pg: pg, art: art, ctx: ctx, video: video, shade: shade, bar: document.querySelector(MINI),
+    var g = {
+      pg: pg, art: live || art, ctx: ctx, video: video, shade: shade, bar: document.querySelector(MINI),
       nav: document.getElementById('taro-nav'), fades: [].slice.call(pg.querySelectorAll(FADE)),
-      top: sheetTop(), navH: navSpace(), full: full, mini: mini, clip: clip || { x: 0, y: 0 },
+      top: sheetTop(), navH: navSpace(), full: full, mini: mini, clip: clip,
     };
+    // A video keeps playing while the copy is up, also at rest (touch held, YouTube settling):
+    // redraw it every frame until the sheet ends, or the picture freezes.
+    // Fitted inside the square, wide or tall, with black around it.
+    var fit = video && Math.min(art.width / video.videoWidth, art.height / video.videoHeight);
+    var vw = video && video.videoWidth * fit, vh = video && video.videoHeight * fit;
+    if (video && !live) (function draw() {
+      if (geo !== g && geo !== null) return;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, art.width, art.height);
+      ctx.drawImage(video, (art.width - vw) / 2, (art.height - vh) / 2, vw, vh);
+      if (document.documentElement.classList.contains('taro-sheet')) requestAnimationFrame(draw);
+    })();
+    return g;
   }
+  // A muted live copy of YouTube's <video> (captureStream), kept running while a music video plays so
+  // it's ready before a drag starts (a new one takes ~60 ms to show a frame). Unlike the canvas it's
+  // drawn by the browser's media pipeline, so it keeps moving while YouTube's code blocks the page.
+  var vcopy = null;
+  function videoCopy() {
+    var pg = document.querySelector('ytmusic-player-page');
+    var v = pg && pg.hasAttribute('video-mode') && pg.querySelector('#song-video video');
+    var stream = vcopy && vcopy.srcObject;
+    var live = stream && vcopy.source === v &&
+      stream.getVideoTracks().some(function (t) { return t.readyState === 'live'; });
+    if (stream && !live) stream.getTracks().forEach(function (t) { t.stop(); });
+    if (!v || !v.captureStream) return vcopy && (vcopy.srcObject = null);
+    if (!vcopy) {
+      vcopy = document.createElement('video');
+      vcopy.id = 'taro-vid';
+      vcopy.muted = vcopy.playsInline = true;
+      document.body.appendChild(vcopy);
+    }
+    if (!live) {
+      vcopy.source = v;
+      vcopy.srcObject = v.captureStream();
+      vcopy.play().catch(function () {});
+    }
+    return vcopy.readyState >= 2 ? vcopy : null;
+  }
+  setInterval(videoCopy, 1000);
   // Height of the tabs plus the phone's navigation bar under them (the tabs' bottom padding).
   var navSpace = function () {
     var nav = document.getElementById('taro-nav');
@@ -446,7 +489,6 @@
     // Snap the visible (cropped) edges, not the square's, so they land on device pixels like YouTube's.
     g.art.style.transform = 'translate3d(' + (snap(x + cx) - cx) + 'px,' + (snap(y + cy) - cy) + 'px,0) scale(' + 1 / k + ')';
     g.art.style.clipPath = 'inset(' + c.y * p + 'px ' + c.x * p + 'px round ' + 4 * k + 'px)';
-    if (g.video) g.ctx.drawImage(g.video, 0, 0, g.art.width, g.art.height);
     g.shade.style.opacity = 1 - p;
     g.fades.forEach(function (el) { el.style.setProperty('opacity', clamp(p * 2 - 1), 'important'); });
   }
