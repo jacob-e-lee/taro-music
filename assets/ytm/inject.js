@@ -174,10 +174,10 @@
       ' ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)[taro-pressed] {' +
       ' opacity: 1 !important; background: rgba(255,255,255,.12); animation: taro-fade .25s; }',
     '@keyframes taro-fade { from { background-color: transparent; } }',
-    // A list row's highlight reaches halfway to the rows above and below (--taro-half, set when pressed), with rounded corners.
+    // A list row's highlight reaches halfway to the rows above and below (--taro-t and --taro-b, set when pressed), with rounded corners.
     'ytmusic-responsive-list-item-renderer[taro-pressed] { background: none; isolation: isolate; }',
     'ytmusic-responsive-list-item-renderer[taro-pressed]::before { content: ""; position: absolute; z-index: -1;' +
-      ' inset: calc(-1 * var(--taro-half, 8px)) var(--taro-r, -8px) calc(-1 * var(--taro-half, 8px)) var(--taro-l, -8px);' +
+      ' inset: calc(-1 * var(--taro-t, 8px)) var(--taro-r, -8px) calc(-1 * var(--taro-b, 8px)) var(--taro-l, -8px);' +
       ' border-radius: 12px; background: rgba(255,255,255,.12); animation: taro-fade-in .3s; }',
     '@keyframes taro-fade-in { from { opacity: 0; } }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
@@ -367,6 +367,15 @@
       e.preventDefault();
     }
   }, true);
+  // YouTube's own taps (rows, cards) fire from touchend, not click: a still finger held too long is no tap
+  // there either. (A moving finger is left alone: sliders and drags need their touchend.)
+  window.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0];
+    if (e.timeStamp - downAt > 500 && Math.abs(t.clientX - downX) + Math.abs(t.clientY - downY) <= 16) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true);
   document.addEventListener('dragstart', function (e) { e.preventDefault(); }, true);
   document.addEventListener('pointerdown', function (e) {
     downX = e.clientX; downY = e.clientY; downAt = e.timeStamp;
@@ -377,11 +386,15 @@
     // A beat of delay, so a flick that scrolls at once doesn't flash.
     pressTimer = setTimeout(function () {
       pressed = t;
-      var o = t.nextElementSibling || t.previousElementSibling;  // the row beside it, to find the gap
-      if (o && o.localName === t.localName) {
-        var a = t.getBoundingClientRect(), b = o.getBoundingClientRect();
-        t.style.setProperty('--taro-half', Math.max(0, (Math.abs(b.top - a.top) - a.height) / 2) + 'px');
-      }
+      // Half the gap to the row above or below (in its own column: a carousel lists its columns one
+      // after another), but no further than the box that clips it.
+      var a = t.getBoundingClientRect(), pr = t.parentElement.getBoundingClientRect(), half = 8;
+      [t.previousElementSibling, t.nextElementSibling].some(function (o) {
+        var b = o && o.localName === t.localName && o.getBoundingClientRect();
+        if (b && Math.abs(b.left - a.left) < 2) return (half = Math.max(0, (Math.abs(b.top - a.top) - a.height) / 2)), true;
+      });
+      t.style.setProperty('--taro-t', Math.min(half, Math.max(0, a.top - pr.top)) + 'px');
+      t.style.setProperty('--taro-b', Math.min(half, Math.max(0, pr.bottom - a.bottom)) + 'px');
       // Reach 8px past the row's content (its padding), which differs from page to page.
       var cs = getComputedStyle(t);
       t.style.setProperty('--taro-l', (parseFloat(cs.paddingLeft) - 8) + 'px');
