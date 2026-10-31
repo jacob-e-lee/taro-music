@@ -40,7 +40,8 @@ in a few files:
     The page follows your finger at the display's refresh rate, and the album art
     (or the live picture, for music videos) morphs between the thumbnail and full
     size. Tapping the mini player, the chevron and the Back button use the same
-    animation (portrait only); picking a song slides the whole player up.
+    animation (portrait only); picking a song slides the whole player up. While
+    the up next / lyrics / related panel is open, the art is not a drag handle.
   - The app draws edge to edge: the page's colours continue behind the status bar
     and the navigation buttons.
   - A slimmer top bar and tab bar; the hamburger menu is replaced by the tabs and a
@@ -50,8 +51,9 @@ in a few files:
     shrinking it, so nothing jumps.
   - The song menu (3-dots or long-press) is a bottom sheet: it slides up over a
     dimmed page, shows the song, artist, a like button and a close button, and
-    closes by dragging down from anywhere on it. The whole panel scrolls as one
-    and grows to the top for long menus.
+    closes by dragging down from anywhere on it. Liking from it leaves it open.
+    Swiping up on a long menu grows the panel with your finger to the top of the
+    screen, then the whole panel scrolls as one.
   - Touch feedback on buttons, cards, rows, chips and menu items: they dim or
     highlight while pressed, even if the finger then drags away. Song rows get a
     rounded highlight reaching halfway to the next row.
