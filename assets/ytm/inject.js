@@ -318,7 +318,7 @@
   // ---- Song menus as a bottom sheet -----------------------------------------------------
   // YouTube opens these as a dropdown at the tapped spot. Here the dropdown is restyled (see the CSS)
   // into a sheet under a bar with the song, its artist, a like button and a close button. Dragging
-  // the bar down, tapping the dimmed page or the close button slides it away.
+  // the sheet down, tapping the dimmed page or the close button slides it away.
   var ROW = 'ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, ytmusic-player-bar';
   var menuRow = null, scrim = null, sheet = null;  // the row that opened the menu; the dimmer; the open dropdown
   // The menu doesn't say which song it is for; remember the last row touched (3-dots or long press).
@@ -383,23 +383,29 @@
     dd.style.transform = 'translateY(100%)';
     setTimeout(function () { dd.close(); dd.style.transition = dd.style.transform = ''; }, 200);
   }
-  function dragSheet(h, dd) {
-    var y0 = null, dy = 0, t0 = 0;
-    h.addEventListener('pointerdown', function (e) {
-      if (e.target.closest('button')) return;
-      y0 = e.clientY; dy = 0; t0 = e.timeStamp;
-      h.setPointerCapture(e.pointerId);
-      dd.style.transition = scrim.style.transition = 'none';
-    });
-    h.addEventListener('pointermove', function (e) {
-      if (y0 == null) return;
-      dy = Math.max(0, e.clientY - y0);
+  // Dragging down anywhere on the sheet closes it, unless the list is scrolled (then it scrolls).
+  // Touch events, not pointer events: only a cancelable touchmove can stop the list from scrolling.
+  function dragSheet(dd) {
+    var list = dd.querySelector('#items'), y0 = 0, dy = 0, t0 = 0, drag = false;
+    dd.addEventListener('touchstart', function (e) {
+      y0 = e.touches[0].clientY; t0 = e.timeStamp; dy = 0; drag = false;
+    }, { passive: true });
+    dd.addEventListener('touchmove', function (e) {
+      var y = e.touches[0].clientY;
+      if (!drag) {
+        if (list.scrollTop > 0) { y0 = y; t0 = e.timeStamp; return; }  // scrolling: start over from here
+        if (y - y0 < 6) return;
+        drag = true;
+        dd.style.transition = scrim.style.transition = 'none';
+      }
+      e.preventDefault();
+      dy = Math.max(0, y - y0);
       dd.style.transform = 'translateY(' + dy + 'px)';
       scrim.style.opacity = 1 - dy / dd.offsetHeight;
-    });
+    }, { passive: false });
     var up = function (e) {
-      if (y0 == null) return;
-      y0 = null;
+      if (!drag) return;
+      drag = false;
       dd.style.transition = scrim.style.transition = '';
       // Far enough or a quick flick closes; otherwise it springs back.
       if (dy > dd.offsetHeight / 3 || dy / (e.timeStamp - t0) > 0.5) return closeSheet();
@@ -407,8 +413,8 @@
       dd.style.transform = '';
       scrim.style.opacity = '';
     };
-    h.addEventListener('pointerup', up);
-    h.addEventListener('pointercancel', up);
+    dd.addEventListener('touchend', up);
+    dd.addEventListener('touchcancel', up);
   }
   // Called for each dropdown YouTube adds. `opened` isn't an attribute; Polymer flips aria-hidden with it.
   function watchMenu(dd) {
@@ -425,7 +431,7 @@
           document.body.appendChild(scrim);
         }
         fillHead(m);
-        if (!m.__taroDrag) { m.__taroDrag = true; dragSheet(m.querySelector('#taro-mh'), dd); }
+        if (!dd.__taroDrag) { dd.__taroDrag = true; dragSheet(dd); }
         dd.noCancelOnOutsideClick = true;  // the scrim's tap closes it, with the slide
         sheet = dd;
         dd.classList.add('taro-menu');
