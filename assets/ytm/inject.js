@@ -863,6 +863,8 @@
     var open = geo ? sheetP > 0.5 : isOpen();
     var zone = open ? (t.closest('#player-page #player') ? 'art' : t.closest('#player-page #main-panel') ? 'page' : null)
       : t.closest(MINI) || t.closest('#player-page #player') ? 'mini' : null;
+    // With the up next / lyrics / related panel open, the art isn't a handle: dragging it would tear the page.
+    if (zone === 'art' && t.closest('ytmusic-player-page[player-page-ui-state=TABS_VIEW]')) zone = null;
     var x = e.touches[0].clientX, y = e.touches[0].clientY;
     // Catch the sheet mid-animation, like a native one, instead of ignoring the touch.
     var grab = animating && geo && !!(t.closest('ytmusic-player-page') || t.closest(MINI));
