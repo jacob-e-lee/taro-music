@@ -1,4 +1,4 @@
-name: taro_music
+﻿name: taro_music
 description: "YouTube Music in an Android WebView, with ad blocking, background playback and mobile gestures."
 publish_to: 'none'
 
@@ -13,7 +13,15 @@ dependencies:
 
 dev_dependencies:
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.0
 
 flutter:
   assets:
     - assets/ytm/inject.js
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon/icon.png"
