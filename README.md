@@ -2,12 +2,24 @@
 
 Taro Music turns the YouTube Music website into a proper mobile app.
 
+<table>
+  <tr><th>Before</th><th>After</th></tr>
+  <tr>
+    <td><img src="docs/images/home_before.jpg" width="100%" /></td>
+    <td><img src="docs/images/home.jpg" width="100%" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/player_before.jpg" width="100%" /></td>
+    <td><img src="docs/images/player.jpg" width="100%" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/menu_before.jpg" width="100%" /></td>
+    <td><img src="docs/images/menu.jpg" width="100%" /></td>
+  </tr>
+</table>
 
-<p align="center">
-  <img src="docs/images/full_player.jpg" width="32%" />
-  <img src="docs/images/home.jpg" width="32%" />
-  <img src="docs/images/song_menu.jpg" width="32%" />
-</p>
+<img src="docs/images/player_drag.gif" width="50%" />
+
 
 ## What you get
 
