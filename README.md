@@ -59,19 +59,19 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 ```
 
 `install -r` keeps your data, so you stay signed in. Before publishing a build
-anywhere, change the placeholder `applicationId` (`com.example.taro_music`).
+anywhere, change the placeholder `applicationId` (`io.github.jacob_e_lee.taro_music`).
 
 ## For developers
 
 Taro Music is a Flutter shell around one native `WebView`. Almost everything
 lives in three files:
 
-- [`YtmWebView.kt`](android/app/src/main/kotlin/com/example/taro_music/YtmWebView.kt):
+- [`YtmWebView.kt`](android/app/src/main/kotlin/io/github/jacob_e_lee/taro_music/YtmWebView.kt):
   WebView setup, ad request blocking, visibility spoofing, script injection.
 - [`assets/ytm/inject.js`](assets/ytm/inject.js): the CSS and JS injected into
   every music.youtube.com page (ad stripping, gestures, player sheet, media
   controls bridge).
-- [`MediaControls.kt`](android/app/src/main/kotlin/com/example/taro_music/MediaControls.kt):
+- [`MediaControls.kt`](android/app/src/main/kotlin/io/github/jacob_e_lee/taro_music/MediaControls.kt):
   the Android media session and notification.
 
 Debug builds load `inject.js` from the phone when it exists, so JS changes need

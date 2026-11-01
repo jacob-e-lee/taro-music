@@ -1,4 +1,4 @@
-package com.example.taro_music
+package io.github.jacob_e_lee.taro_music
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -27,7 +27,7 @@ import java.net.URL
 object MediaControls {
     const val NOTIFICATION_ID = 1
     private const val CHANNEL = "playback"
-    const val ACTION = "com.example.taro_music.MEDIA"
+    const val ACTION = "io.github.jacob_e_lee.taro_music.MEDIA"
 
     /** Runs a command in the page (`__taroMedia(command, arg)`); set by [YtmWebView]. */
     var runInPage: ((command: String, arg: Long) -> Unit)? = null

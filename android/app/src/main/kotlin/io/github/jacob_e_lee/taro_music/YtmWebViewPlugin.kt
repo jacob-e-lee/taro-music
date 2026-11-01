@@ -1,4 +1,4 @@
-package com.example.taro_music
+package io.github.jacob_e_lee.taro_music
 
 import android.content.Context
 import android.view.View
@@ -26,7 +26,7 @@ private class YtmWebViewFactory(
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView =
         YtmPlatformView(
             prewarmedWebView?.also { prewarmedWebView = null } ?: YtmWebView(context),
-            MethodChannel(messenger, "com.example.taro_music/$VIEW_TYPE/$viewId"),
+            MethodChannel(messenger, "io.github.jacob_e_lee.taro_music/$VIEW_TYPE/$viewId"),
         )
 }
 

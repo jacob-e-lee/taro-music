@@ -130,7 +130,7 @@ class _YtmScreenState extends State<_YtmScreen> with SingleTickerProviderStateMi
                 child: AndroidView(
                   viewType: 'ytm_webview',
                   onPlatformViewCreated: (id) {
-                    _web = MethodChannel('com.example.taro_music/ytm_webview/$id');
+                    _web = MethodChannel('io.github.jacob_e_lee.taro_music/ytm_webview/$id');
                     _watchPage();
                   },
                 ),

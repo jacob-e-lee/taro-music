@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.taro_music"
+    namespace = "io.github.jacob_e_lee.taro_music"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.taro_music"
+        applicationId = "io.github.jacob_e_lee.taro_music"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // From `version:` in pubspec.yaml.

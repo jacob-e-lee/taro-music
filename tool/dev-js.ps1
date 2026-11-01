@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
 if (-not $adb) { $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" }
-$app = 'com.example.taro_music'
+$app = 'io.github.jacob_e_lee.taro_music'
 $dest = "/sdcard/Android/data/$app/files/inject.js"
 
 if ($Reset) {

@@ -1,4 +1,4 @@
-package com.example.taro_music
+package io.github.jacob_e_lee.taro_music
 
 import android.app.Service
 import android.content.Intent

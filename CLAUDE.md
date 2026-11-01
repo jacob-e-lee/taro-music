@@ -2,11 +2,11 @@
 
 An Android-only app that wraps the YouTube Music website (music.youtube.com) in a WebView. It's a Flutter shell, but almost all behaviour lives in:
 
-- `android/app/src/main/kotlin/com/example/taro_music/YtmWebView.kt`: WebView setup, ad request blocking, visibility spoofing (keeps audio playing when the screen locks), script injection.
+- `android/app/src/main/kotlin/io/github/jacob_e_lee/taro_music/YtmWebView.kt`: WebView setup, ad request blocking, visibility spoofing (keeps audio playing when the screen locks), script injection.
 - `assets/ytm/inject.js`: CSS/JS injected into the page: ad stripping (JSON.parse / fetch / XHR hooks), hiding upsells, and the mobile UX layer (bottom tab bar, swipe gestures, draggable player sheet, search bar behaviour, the media-controls bridge).
 - `MediaControls.kt`: the native `MediaSession` and media notification (lock screen, quick settings, headset / Bluetooth buttons). The WebView has no Media Session API, so inject.js reports the track through a web message listener (`TaroMedia`, YouTube Music origin only) and commands come back as `__taroMedia(command, arg)`.
 - `KeepAliveService.kt`: foreground service that keeps the process alive; its notification is the media notification, and that notification's buttons come back to it. `YtmWebViewPlugin.kt` registers the WebView as a Flutter platform view (`ytm_webview`).
-- `lib/main.dart`: hosts that platform view and talks to it over the `com.example.taro_music/ytm_webview/<id>` channel: `back` forwards Android Back to the WebView's history, `ready` answers whether the page has painted. The view type and channel name must match `YtmWebViewPlugin.kt`. It also draws the loading screen (breathing logo over a purple glow) on top of the WebView; it polls `ready` every 100 ms, fades out when true, and gives up after 10 s. The page draws edge to edge under both system bars, and the keyboard covers it rather than resizing it (`resizeToAvoidBottomInset: false`).
+- `lib/main.dart`: hosts that platform view and talks to it over the `io.github.jacob_e_lee.taro_music/ytm_webview/<id>` channel: `back` forwards Android Back to the WebView's history, `ready` answers whether the page has painted. The view type and channel name must match `YtmWebViewPlugin.kt`. It also draws the loading screen (breathing logo over a purple glow) on top of the WebView; it polls `ready` every 100 ms, fades out when true, and gives up after 10 s. The page draws edge to edge under both system bars, and the keyboard covers it rather than resizing it (`resizeToAvoidBottomInset: false`).
 
 **Startup.** `MainActivity.onCreate` builds the `YtmWebView` straight away (`prewarmedWebView` in `YtmWebViewPlugin.kt`), so `loadUrl` runs ~0.3 s earlier than if it waited for Flutter to create the platform view; the factory hands that instance over, or builds one if none exists. `YtmWebView.visible` is set from `onPageCommitVisible` and read through `ready`. It is polled rather than pushed, because a push can land before Dart has set up its channel. Measured on the phone (cold start, `am start -W` only times the Flutter activity, so read page timings over DevTools): page load starts ~0.24 s after process start, first contentful paint ~1.95 s. The remaining ~1.6 s is YouTube's JS and data, and 33 of 49 resources already come from Chromium's cache, so there is nothing more to cache. The launch background is black (`launch_background.xml`, both copies) to match the loading screen.
 
@@ -16,7 +16,7 @@ There is no desktop build. The app only runs on a real Android phone over USB, s
 
 - `adb` is **not on PATH**. Use `"$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"` (PowerShell) or `"$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"` (bash).
 - `flutter` is **not on PATH**. Use `C:\Users\jelee\develop\flutter\bin\flutter.bat`.
-- App id / package: `com.example.taro_music`. Launch activity: `.MainActivity`.
+- App id / package: `io.github.jacob_e_lee.taro_music`. Launch activity: `.MainActivity`.
 - Run `adb devices` first. If no device is listed, ask the user to plug in the phone and accept the USB debugging prompt. Don't guess.
 
 ## Debug-only hooks (active when the APK is debuggable)
@@ -25,7 +25,7 @@ The hooks check `ApplicationInfo.FLAG_DEBUGGABLE`, not `BuildConfig`.
 
 1. **Console → logcat.** Page `console.*` output and uncaught JS errors go to logcat with tag `TaroMusic`.
 2. **Remote DevTools.** `WebView.setWebContentsDebuggingEnabled(true)`. The user opens `edge://inspect` or `brave://inspect` (they have no Chrome) to get Elements, Console and Network for the live page.
-3. **inject.js override.** If `/sdcard/Android/data/com.example.taro_music/files/inject.js` exists, the app loads it instead of the bundled asset. Release builds ignore it.
+3. **inject.js override.** If `/sdcard/Android/data/io.github.jacob_e_lee.taro_music/files/inject.js` exists, the app loads it instead of the bundled asset. Release builds ignore it.
 
 ## Loops
 
@@ -66,7 +66,7 @@ Before tapping by coordinates, check the phone is still in portrait (`adb shell 
 
 **Drive the page from the CLI (DevTools protocol):** the remote-DevTools hook also works without a browser:
 ```
-adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof com.example.taro_music)
+adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof io.github.jacob_e_lee.taro_music)
 curl -s localhost:9222/json/list
 ```
 Then connect to `ws://localhost:9222/devtools/browser` (Node 22 has a global `WebSocket`), `Target.attachToTarget` the `page` target with `flatten: true`, and use `Runtime.evaluate` to query the DOM. `Page.startScreencast` captures the frames actually painted, which is the way to catch one-frame flickers that screenshots miss. The pid changes on every restart, so re-forward afterwards. If `/json/list` is empty, restart the app.
@@ -105,4 +105,4 @@ Then connect to `ws://localhost:9222/devtools/browser` (Node 22 has a global `We
 - Git Bash rewrites `/sdcard/...` arguments into Windows paths. Prefix adb commands with `MSYS_NO_PATHCONV=1`.
 - PowerShell 5.1: redirecting a native command's stderr (`2>$null`, `2>&1`) turns its output into error records. With `$ErrorActionPreference = 'Stop'` that throws. `adb shell monkey` writes to stderr, so the scripts use `am start -n` instead.
 - Expected noise in logcat: CORS errors for `googleads.g.doubleclick.net` (it's blocked on purpose) and the `LegacyDataMixin` log line.
-- Check whether an override is still on the device: `adb shell ls /sdcard/Android/data/com.example.taro_music/files/`.
+- Check whether an override is still on the device: `adb shell ls /sdcard/Android/data/io.github.jacob_e_lee.taro_music/files/`.
