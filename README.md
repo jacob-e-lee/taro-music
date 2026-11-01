@@ -23,6 +23,8 @@ Free and open source (GPL-3.0). Android only.
     your finger.
   - Song menus slide up as a bottom sheet. Drag down to close.
   - Buttons and rows react when you press them.
+- **Quick start.** The page begins loading while the app is still opening, and
+  a breathing logo covers the wait until music appears.
 - **Full screen.** The app draws behind the status bar and navigation buttons.
 - **No "Get the app" nags.** Upsell banners and "Open app" buttons are hidden.
 - **Your account works.** Sign in with Google as usual and stay signed in.
