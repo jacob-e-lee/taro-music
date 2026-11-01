@@ -2,39 +2,43 @@
 
 Taro Music turns the YouTube Music website into a proper mobile app.
 
-<table>
-  <tr><th>Before</th><th>After</th></tr>
+<div align="center">
+<table width="75%">
   <tr>
-    <td><img src="docs/images/home_before.jpg" width="100%" /></td>
-    <td><img src="docs/images/home.jpg" width="100%" /></td>
+    <th><div align="center">Before</div></th>
+    <th><div align="center">After</div></th>
   </tr>
   <tr>
-    <td><img src="docs/images/player_before.jpg" width="100%" /></td>
-    <td><img src="docs/images/player.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/home_before.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/home.jpg" width="100%" /></td>
   </tr>
   <tr>
-    <td><img src="docs/images/menu_before.jpg" width="100%" /></td>
-    <td><img src="docs/images/menu.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/player_before.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/player.jpg" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/menu_before.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/menu.jpg" width="100%" /></td>
   </tr>
 </table>
 
-<img src="docs/images/player_drag.gif" width="50%" />
+<img src="docs/images/player_drag.gif" width="37.5%" />
+</div>
 
-
-## What you get
+## Features
 
 - No ads
 - Plays in the background
-- Lock screen and notification controls.
-- Improved UI/UX for mobile devices
-  - Swipe controls
-  - Navigation Bar
-  - Full screen (renders behind Android status bar and navigation buttons)
+- Lock screen and notification controls
+- Mobile-friendly UI
+  - Swipe gestures
+  - Bottom navigation bar
+  - Full screen (draws behind the Android status bar and navigation buttons)
 
 ## How it works
 
-- Wrap [https://music.youtube.com/](https://music.youtube.com/) in Android webview.
-- Inject javascript to block ads and optimize the frontend UI/UX for mobile
+- Wraps [music.youtube.com](https://music.youtube.com/) in an Android WebView.
+- Injects JavaScript to block ads and adapt the page for mobile.
 
 ## Disclaimer
 
