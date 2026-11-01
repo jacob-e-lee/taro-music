@@ -3,28 +3,26 @@
 Taro Music turns the YouTube Music website into a proper mobile app.
 
 <div align="center">
-<table width="75%">
+<table>
   <tr>
+    <th><div align="center">Before</div></th>
+    <th><div align="center">After</div></th>
     <th><div align="center">Before</div></th>
     <th><div align="center">After</div></th>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/home_before.jpg" width="100%" /></td>
-    <td align="center"><img src="docs/images/home.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/home_before.jpg" width="180" /></td>
+    <td align="center"><img src="docs/images/home.jpg" width="180" /></td>
+    <td align="center"><img src="docs/images/player_before.jpg" width="180" /></td>
+    <td align="center"><img src="docs/images/player.jpg" width="180" /></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/player_before.jpg" width="100%" /></td>
-    <td align="center"><img src="docs/images/player.jpg" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/menu_before.jpg" width="100%" /></td>
-    <td align="center"><img src="docs/images/menu.jpg" width="100%" /></td>
+    <td align="center"><img src="docs/images/menu_before.jpg" width="180" /></td>
+    <td align="center"><img src="docs/images/menu.jpg" width="180" /></td>
+    <td align="center" colspan="2"><img src="docs/images/player_drag.gif" width="180" /></td>
   </tr>
 </table>
-
-<img src="docs/images/player_drag.gif" width="37.5%" />
 </div>
-
 ## Features
 
 - No ads
