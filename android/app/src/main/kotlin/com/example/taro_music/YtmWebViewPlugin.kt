@@ -13,13 +13,19 @@ import io.flutter.plugin.platform.PlatformViewFactory
 // The view type and channel name must match `lib/main.dart`.
 private const val VIEW_TYPE = "ytm_webview"
 
+/**
+ * Built by `MainActivity.onCreate` so the page starts loading while Flutter is still booting;
+ * the platform view takes it over once Dart asks for it.
+ */
+var prewarmedWebView: YtmWebView? = null
+
 private class YtmWebViewFactory(
     private val messenger: BinaryMessenger,
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView =
         YtmPlatformView(
-            YtmWebView(context),
+            prewarmedWebView?.also { prewarmedWebView = null } ?: YtmWebView(context),
             MethodChannel(messenger, "com.example.taro_music/$VIEW_TYPE/$viewId"),
         )
 }
@@ -35,12 +41,20 @@ private class YtmPlatformView(
 
     override fun getView(): View = webView
 
-    /** `back`: navigates back and answers true, or answers false at the first page. */
+    /**
+     * `back`: navigates back and answers true, or answers false at the first page.
+     * `ready`: answers whether the page has painted yet.
+     */
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method != "back") return result.notImplemented()
-        val canGoBack = webView.canGoBack()
-        if (canGoBack) webView.goBack()
-        result.success(canGoBack)
+        when (call.method) {
+            "ready" -> result.success(webView.visible)
+            "back" -> {
+                val canGoBack = webView.canGoBack()
+                if (canGoBack) webView.goBack()
+                result.success(canGoBack)
+            }
+            else -> result.notImplemented()
+        }
     }
 
     override fun dispose() {

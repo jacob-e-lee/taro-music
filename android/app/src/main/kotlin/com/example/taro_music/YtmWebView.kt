@@ -28,7 +28,11 @@ import java.io.ByteArrayInputStream
  */
 class YtmWebView(context: Context) : WebView(context) {
 
-    private val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    /** True once the page has painted something; `lib/main.dart` polls it to drop its loading screen. */
+    @Volatile var visible = false
+        private set
+
+    private val debuggable =(context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     // Debug builds prefer a file pushed by tool/dev-js.ps1, so JS changes skip the rebuild.
     private val script: String = context.getExternalFilesDir(null)
@@ -59,6 +63,10 @@ class YtmWebView(context: Context) : WebView(context) {
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 // Fallback for WebViews without document-start scripts (see init).
                 view.evaluateJavascript(script, null)
+            }
+
+            override fun onPageCommitVisible(view: WebView, url: String?) {
+                visible = true
             }
 
             override fun onPageFinished(view: WebView, url: String?) {

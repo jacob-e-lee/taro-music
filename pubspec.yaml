@@ -18,6 +18,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/ytm/inject.js
+    - assets/icon/icon.png
 
 flutter_launcher_icons:
   android: true
