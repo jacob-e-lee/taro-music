@@ -40,6 +40,18 @@ object MediaControls {
     private var art: Bitmap? = null
     private val main = Handler(Looper.getMainLooper())
 
+    // Android 17 silently drops a background service's foreground state (~18 min in, no callback),
+    // then mutes the app's audio while the notification stays up. Re-assert it every minute while playing.
+    private val keepForeground = object : Runnable {
+        private lateinit var context: Context
+        fun start(c: Context) { context = c; run() }
+        override fun run() {
+            if (!playing) return
+            runCatching { context.startForegroundService(Intent(context, KeepAliveService::class.java)) }
+            main.postDelayed(this, 60_000)
+        }
+    }
+
     private fun session(context: Context): MediaSession = session ?: MediaSession(context.applicationContext, "TaroMusic").apply {
         setCallback(object : MediaSession.Callback() {
             override fun onPlay() = command("play")
@@ -61,6 +73,8 @@ object MediaControls {
     fun update(context: Context, json: String) {
         val s = runCatching { JSONObject(json) }.getOrNull() ?: return
         playing = s.optBoolean("playing")
+        main.removeCallbacks(keepForeground)
+        if (playing) keepForeground.start(context.applicationContext)
         title = s.optString("title").ifEmpty { "Taro Music" }
         artist = s.optString("artist")
         val session = session(context)

@@ -104,5 +104,6 @@ Then connect to `ws://localhost:9222/devtools/browser` (Node 22 has a global `We
 
 - Git Bash rewrites `/sdcard/...` arguments into Windows paths. Prefix adb commands with `MSYS_NO_PATHCONV=1`.
 - PowerShell 5.1: redirecting a native command's stderr (`2>$null`, `2>&1`) turns its output into error records. With `$ErrorActionPreference = 'Stop'` that throws. `adb shell monkey` writes to stderr, so the scripts use `am start -n` instead.
+- Android 17 silently drops `KeepAliveService`'s foreground state some time after the app goes to the background (NouTube saw ~18 min), and then mutes the audio (`AudioHardening background playback would be muted` in logcat) while the notification stays up. `MediaControls.keepForeground` re-calls `startForegroundService` on each play and every minute while playing. Check with `dumpsys activity lru`: the process should read `FGS`, not `LAST`.
 - Expected noise in logcat: CORS errors for `googleads.g.doubleclick.net` (it's blocked on purpose) and the `LegacyDataMixin` log line.
 - Check whether an override is still on the device: `adb shell ls /sdcard/Android/data/io.github.jacob_e_lee.taro_music/files/`.
