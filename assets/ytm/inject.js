@@ -74,18 +74,42 @@
   }
 
   var origFetch = window.fetch;
-  window.fetch = function (input) {
-    var url = input instanceof Request ? input.url : String(input);
-    return origFetch.apply(this, arguments).then(function (res) {
-      if (res.status !== 200) return res;
-      return res.clone().text().then(function (text) {
-        var out = rewrite(url, text);
-        return out === text ? res : new Response(out, {
-          status: res.status, statusText: res.statusText, headers: res.headers,
-        });
+  function clean(url, res) {
+    if (res.status !== 200) return res;
+    return res.clone().text().then(function (text) {
+      var out = rewrite(url, text);
+      return out === text ? res : new Response(out, {
+        status: res.status, statusText: res.statusText, headers: res.headers,
       });
     });
+  }
+  // YouTube can answer one account's home with 400 "invalid argument" (other pages and other
+  // accounts work); the same request signed out still works, so show that home instead.
+  function homeFallback(url, body) {
+    if (body.indexOf('"browseId":"FEmusic_home"') < 0) return null;
+    return origFetch(url, { method: 'POST', credentials: 'omit', headers: { 'content-type': 'application/json' }, body: body });
+  }
+  window.fetch = function (input) {
+    var url = input instanceof Request ? input.url : String(input);
+    // Read now: fetch consumes the request's body. YouTube gzips it.
+    var body = input instanceof Request && input.method === 'POST' && url.indexOf('/youtubei/v1/browse') >= 0 &&
+      new Response(input.headers.get('content-encoding') === 'gzip'
+        ? input.clone().body.pipeThrough(new DecompressionStream('gzip')) : input.clone().body).text();
+    return origFetch.apply(this, arguments).then(function (res) {
+      if (res.status !== 400 || !body) return clean(url, res);
+      return body.then(function (b) { return homeFallback(url, b) || res; })
+        .then(function (r) { return clean(url, r); }, function () { return res; });
+    });
   };
+  // The first page's home comes inside the HTML, past the hook above: if it's the error,
+  // navigate home again so it comes through fetch.
+  var homeTries = 40;
+  var homeCheck = setInterval(function () {
+    var b = document.querySelector('ytmusic-browse-response');
+    if (!b || !b.data) { if (--homeTries <= 0) clearInterval(homeCheck); return; }
+    clearInterval(homeCheck);
+    if (location.pathname === '/' && b.data.error) go('FEmusic_home');
+  }, 250);
 
   var xhrOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
