@@ -365,6 +365,9 @@
         fitMenus(menus);
         new MutationObserver(function () { fitMenus(menus); }).observe(menus, { childList: true });
       }
+      // The Premium promo (hidden by the CSS above) opens in a dialog that makes the whole page inert: no taps register.
+      var promo = menus && menus.querySelector('tp-yt-paper-dialog ytmusic-mealbar-promo-renderer');
+      if (promo && promo.closest('tp-yt-paper-dialog').opened) promo.closest('tp-yt-paper-dialog').close();
     }, 300);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
@@ -439,6 +442,7 @@
   window.addEventListener('touchend', function (e) {
     var t = e.changedTouches[0];
     if (e.timeStamp - downAt > 500 && Math.abs(t.clientX - downX) + Math.abs(t.clientY - downY) <= 16) {
+      release();  // the player sheet's own touchend, which the stop below would skip (leaving the sheet over the tabs)
       e.stopImmediatePropagation();
       e.preventDefault();
     }
