@@ -444,20 +444,23 @@
     t.style.setProperty('--taro-r', (parseFloat(cs.paddingRight) - 8) + 'px');
     t.setAttribute('taro-pressed', '');
   }
-  // Native taps are forgiving of neither a wandering finger nor a long hold: such a touch isn't a tap.
-  var downX = 0, downY = 0, downAt = 0;
+  // Native taps are forgiving of neither a wandering finger nor a long press: such a touch isn't a tap.
+  // A long press is Android's own (contextmenu, which opens YouTube's menu), not a timer of ours: with a
+  // timer, a press released between it and Android's long press did nothing at all.
+  var downX = 0, downY = 0, longPressed = false;
+  window.addEventListener('contextmenu', function () { longPressed = true; }, true);
   window.addEventListener('click', function (e) {
-    if (e.isTrusted && e.pointerType === 'touch' && (e.timeStamp - downAt > 500 ||
+    if (e.isTrusted && e.pointerType === 'touch' && (longPressed ||
         Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 16)) {
       e.stopImmediatePropagation();
       e.preventDefault();
     }
   }, true);
-  // YouTube's own taps (rows, cards) fire from touchend, not click: a still finger held too long is no tap
+  // YouTube's own taps (rows, cards) fire from touchend, not click: a long-pressed still finger is no tap
   // there either. (A moving finger is left alone: sliders and drags need their touchend.)
   window.addEventListener('touchend', function (e) {
     var t = e.changedTouches[0];
-    if (e.timeStamp - downAt > 500 && Math.abs(t.clientX - downX) + Math.abs(t.clientY - downY) <= 16) {
+    if (longPressed && Math.abs(t.clientX - downX) + Math.abs(t.clientY - downY) <= 16) {
       release();  // the player sheet's own touchend, which the stop below would skip (leaving the sheet over the tabs)
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -465,7 +468,7 @@
   }, true);
   document.addEventListener('dragstart', function (e) { e.preventDefault(); }, true);
   document.addEventListener('pointerdown', function (e) {
-    downX = e.clientX; downY = e.clientY; downAt = e.timeStamp;
+    downX = e.clientX; downY = e.clientY; longPressed = false;
     unpress();
     var t = e.target.closest && (e.target.closest(BUTTON) || e.target.closest(CARD) || e.target.closest('a[href]'));
     if (!t) return;
