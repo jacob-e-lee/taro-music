@@ -163,15 +163,23 @@
     'html { --ytmusic-nav-bar-height: calc(48px + ' + TOP + ') !important; }',
     'ytmusic-nav-bar { top: ' + TOP + ' !important; height: 48px !important; }',
     // The full player keeps its content below the status bar too. Its layout is sized from
-    // --ytmusic-player-page-inner-height (YouTube sets it to the window height); in the queue view
-    // YouTube's own art placement already allows for the shift, so leave it there.
+    // --ytmusic-player-page-inner-height (YouTube sets it to the window height). The tabs view keeps
+    // the same size, so the art doesn't jump when the state flips (fitTabs corrects YouTube's math).
     '#player-page #main-panel { top: ' + TOP + ' !important; height: calc(100% - ' + TOP + ' - ' + BOT + ') !important; }',
-    '#player-page #side-panel { top: calc(64px + ' + TOP + ') !important; }',
+    // YouTube sizes the up next / lyrics / related panel for a top without TOP, so it would hang off
+    // the bottom: pin its bottom instead, and let its list scroll clear of the navigation bar.
+    '#player-page #side-panel { top: calc(64px + ' + TOP + ') !important; bottom: 0 !important; height: auto !important; }',
+    '#player-page #side-panel > ytmusic-tab-renderer { padding-bottom: ' + BOT + ' !important; box-sizing: border-box; }',
+    // No empty band above the tabs when the panel is open.
+    'ytmusic-player-page[player-page-ui-state=TABS_VIEW] tp-yt-paper-tabs.ytmusic-player-page { margin-top: 0 !important; }',
+    // Settling back to the full player, hide the list at once: fading, it shows in the strip below the tabs.
+    'ytmusic-player-page[player-page-ui-state=FULL_PLAYER_VIEW] #side-panel > #tab-renderer { transition: none !important; }',
+    // The full player's controls stay hidden in the tabs view. Not !important: YouTube fades them inline while dragging.
+    'ytmusic-player-page[player-page-ui-state=TABS_VIEW] #main-panel > :not(#music-player-wrapper) { opacity: 0; }',
     '#player-page > .content { padding-top: ' + TOP + ' !important; }',
     // ...while its blurred background and darkening gradient start at the very top, under the status bar.
     '#player-page :is(.background-image, .background-gradient) { top: 0 !important; }',
-    'ytmusic-app-layout[player-page-open] ytmusic-player-page:not([player-page-ui-state=TABS_VIEW]),' +
-      ' html.taro-sheet ytmusic-player-page { --ytmusic-player-page-inner-height: calc(100dvh - ' + TOP + ' - ' + BOT + ') !important; }',
+    'ytmusic-app-layout[player-page-open] ytmusic-player-page, html.taro-sheet ytmusic-player-page { --ytmusic-player-page-inner-height: calc(100dvh - ' + TOP + ' - ' + BOT + ') !important; }',
     // Pull the chip rows (Home's moods, Library's filters) up under the top bar.
     'ytmusic-browse-response ytmusic-chip-cloud-chip-renderer { padding-top: 8px !important; }',
     'ytmusic-browse-response #header > ytmusic-side-aligned-item-renderer { margin-top: 0 !important; }',
@@ -209,7 +217,7 @@
     'ytmusic-carousel#ytmusic-carousel { overflow: clip; overflow-clip-margin: 8px; }',
     'ytmusic-carousel#ytmusic-carousel > #items { padding-block: 8px; margin-block: -8px; }',
     // YouTube's tap ripple is a sharp-cornered rectangle; our press highlight replaces it (a quick tap shows that too).
-    ':is(ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item,' +
+    ':is(ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, tp-yt-paper-tab,' +
       ' ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)' +
       ' tp-yt-paper-ripple { display: none !important; }',
     'ytmusic-responsive-list-item-renderer[taro-leaving]::before { opacity: 0; transition: opacity .2s; }',
@@ -881,7 +889,45 @@
     h.classList.toggle('taro-open', !!L && L.hasAttribute('player-page-open'));
     h.classList.toggle('taro-playing', !!L && L.hasAttribute('player-visible'));
   }).observe(document, { subtree: true, attributes: true, attributeFilter: ['player-page-open', 'player-visible'] });
+  // Dragging the tabs (up next, lyrics, ...) is YouTube's own code, which assumes the page has no status or
+  // navigation bar: its panel distance and art centre come from the window height. Feed it the real ones.
+  function fitTabs() {
+    var pp = document.querySelector('ytmusic-player-page'), c = pp && pp.polymerController;
+    if (!c || c.__taro || !c.applyTransformStyles || !c.setPlayerPosition) return;
+    c.__taro = true;
+    var fit = function () {
+      var mp = pp.querySelector('#main-panel'), pl = pp.querySelector('#player');
+      if (!mp || !pl) return;
+      var y = pl.offsetHeight / 2;
+      for (var n = pl; n && n !== mp; n = n.offsetParent) y += n.offsetTop;
+      c.playerY = y;  // art centre in the main panel, where YouTube guesses from the window height
+      c.moveableDistance = mp.offsetHeight - 132;  // the panel's travel: YouTube's CSS rest offset (inner height - 132)
+    };
+    var setPos = c.setPlayerPosition, apply = c.applyTransformStyles;
+    c.setPlayerPosition = function (s) {
+      var list = pp.querySelector('#tab-renderer');
+      if (list) list.style.visibility = '';
+      fit();
+      return setPos.call(this, s);
+    };
+    c.applyTransformStyles = function (dy) {
+      fit();
+      apply.call(this, dy);
+      // YouTube offsets the panel from the window height; redo it so it starts where it rests and follows the finger.
+      var d = this.moveableDistance, a = Math.min(Math.abs(dy), d) / d, sp = pp.querySelector('#side-panel');
+      if (this.playerPageUiState !== 'FULL_PLAYER_VIEW') a = 1 - a;
+      if (sp) sp.style.transform = 'translate(0, ' + d * (1 - a) + 'px)';
+      // Dragged up, YouTube fades the list in from nothing (and its full-view CSS hides it), which pulls up
+      // an empty black sheet; show it. setPlayerPosition, called as the state settles, drops this.
+      var list = pp.querySelector('#tab-renderer');
+      if (list && this.playerPageUiState === 'FULL_PLAYER_VIEW') {
+        list.style.opacity = '1';
+        list.style.visibility = 'visible';
+      }
+    };
+  }
   new MutationObserver(function (recs) {
+    fitTabs();
     if (!portrait() || !recs.some(function (r) { return r.target.tagName === 'YTMUSIC-APP-LAYOUT'; })) return;
     quench(10);
     flippedAt = performance.now();
@@ -913,6 +959,7 @@
     drag = null;
     if (e.touches.length !== 1) return;
     var t = e.target;
+    if (t.closest('#side-panel')) fitTabs();
     if (t.closest('tp-yt-paper-slider, #side-panel')) return;
     // While the sheet rests at an end (just after a drag), go by what it shows: YouTube's own
     // state may not have caught up yet. The mini player's art is YouTube's #player, not part of the bar.
