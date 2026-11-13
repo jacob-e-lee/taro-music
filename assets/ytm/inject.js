@@ -170,8 +170,15 @@
     // the bottom: pin its bottom instead, and let its list scroll clear of the navigation bar.
     '#player-page #side-panel { top: calc(64px + ' + TOP + ') !important; bottom: 0 !important; height: auto !important; }',
     '#player-page #side-panel > ytmusic-tab-renderer { padding-bottom: ' + BOT + ' !important; box-sizing: border-box; }',
-    // No empty band above the tabs when the panel is open.
+    // As the panel settles after a drag, its colour (blended with the drag in fitTabs) moves with it.
+    'ytmusic-player-page[transition-mode] #side-panel { transition: transform var(--ytmusic-player-page-transition-ms) cubic-bezier(.2,0,.6,1),' +
+      ' background-color var(--ytmusic-player-page-transition-ms) cubic-bezier(.2,0,.6,1) !important; }',
+    // No empty band above the tabs when the panel is open...
     'ytmusic-player-page[player-page-ui-state=TABS_VIEW] tp-yt-paper-tabs.ytmusic-player-page { margin-top: 0 !important; }',
+    // ...but a drag handle on top of them, inside the tabs bar, which is what YouTube's drag listens on.
+    '#side-panel tp-yt-paper-tabs.ytmusic-player-page { position: relative; height: 64px !important; padding-top: 16px; box-sizing: border-box; }',
+    '#side-panel tp-yt-paper-tabs.ytmusic-player-page::before { content: ""; position: absolute; top: 14px; left: 50%; width: 32px;' +
+      ' height: 4px; margin-left: -16px; border-radius: 2px; background: rgba(255,255,255,.3); }',
     // Settling back to the full player, hide the list at once: fading, it shows in the strip below the tabs.
     'ytmusic-player-page[player-page-ui-state=FULL_PLAYER_VIEW] #side-panel > #tab-renderer { transition: none !important; }',
     // The full player's controls stay hidden in the tabs view. Not !important: YouTube fades them inline while dragging.
@@ -906,8 +913,9 @@
     };
     var setPos = c.setPlayerPosition, apply = c.applyTransformStyles;
     c.setPlayerPosition = function (s) {
-      var list = pp.querySelector('#tab-renderer');
+      var list = pp.querySelector('#tab-renderer'), sp = pp.querySelector('#side-panel');
       if (list) list.style.visibility = '';
+      if (sp) sp.style.backgroundColor = '';  // YouTube's transition carries the blend on to the settled colour
       fit();
       return setPos.call(this, s);
     };
@@ -917,7 +925,12 @@
       // YouTube offsets the panel from the window height; redo it so it starts where it rests and follows the finger.
       var d = this.moveableDistance, a = Math.min(Math.abs(dy), d) / d, sp = pp.querySelector('#side-panel');
       if (this.playerPageUiState !== 'FULL_PLAYER_VIEW') a = 1 - a;
-      if (sp) sp.style.transform = 'translate(0, ' + d * (1 - a) + 'px)';
+      if (sp) {
+        sp.style.transform = 'translate(0, ' + d * (1 - a) + 'px)';
+        // YouTube's two panel colours (full view, open), blended with the drag instead of switching at the flip.
+        sp.style.backgroundColor = 'color-mix(in srgb, var(--ytmusic-static-brand-black) ' + a * 100 +
+          '%, var(--ytmusic-player-page-background))';
+      }
       // Dragged up, YouTube fades the list in from nothing (and its full-view CSS hides it), which pulls up
       // an empty black sheet; show it. setPlayerPosition, called as the state settles, drops this.
       var list = pp.querySelector('#tab-renderer');
