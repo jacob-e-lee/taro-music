@@ -23,6 +23,7 @@ Taro Music turns the YouTube Music website into a proper mobile app.
   </tr>
 </table>
 </div>
+
 ## Features
 
 - No ads
