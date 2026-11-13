@@ -217,9 +217,10 @@
     'ytmusic-carousel#ytmusic-carousel { overflow: clip; overflow-clip-margin: 8px; }',
     'ytmusic-carousel#ytmusic-carousel > #items { padding-block: 8px; margin-block: -8px; }',
     // YouTube's tap ripple is a sharp-cornered rectangle; our press highlight replaces it (a quick tap shows that too).
+    // Not display: none: a 0x0 ripple's waves never reach full size, so each tap left one animating every frame forever.
     ':is(ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, tp-yt-paper-tab,' +
       ' ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)' +
-      ' tp-yt-paper-ripple { display: none !important; }',
+      ' tp-yt-paper-ripple { visibility: hidden !important; }',
     'ytmusic-responsive-list-item-renderer[taro-leaving]::before { opacity: 0; transition: opacity .2s; }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
     '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
