@@ -773,7 +773,8 @@
     var pg = document.querySelector('ytmusic-player-page');
     var v = pg && pg.hasAttribute('video-mode') && pg.querySelector('#song-video video');
     var stream = vcopy && vcopy.srcObject;
-    var live = stream && vcopy.source === v &&
+    // A new song reuses the same <video> with a new source; the old capture then freezes on its last frame.
+    var live = stream && vcopy.source === v && vcopy.url === v.currentSrc &&
       stream.getVideoTracks().some(function (t) { return t.readyState === 'live'; });
     if (stream && !live) stream.getTracks().forEach(function (t) { t.stop(); });
     if (!v || !v.captureStream) return vcopy && (vcopy.srcObject = null);
@@ -788,6 +789,7 @@
       vcopy.srcObject = v.captureStream();
       vcopy.play().catch(function () {});
     }
+      vcopy.url = v.currentSrc;
     return vcopy.readyState >= 2 ? vcopy : null;
   }
   setInterval(videoCopy, 1000);
