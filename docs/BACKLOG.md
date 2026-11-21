@@ -3,6 +3,9 @@
 One line per item. `- [ ]` open. The agent adds findings here and moves finished items to docs/DONE.md.
 
 ## Open
+- [ ] [F:small:Library:button#button.yt-icon-button] Library | button#button.yt-icon-button at 264,47 (header) | expected: touch target at least 44x44 css px (or padded hit area) | actual: audit measured 32x32 css px
+- [ ] [F:small:Library:button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextText] Library | button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextText at 132,152 | expected: touch target at least 44x44 css px | actual: audit measured 36x36 css px
+- [ ] [F:gap:Library:button#taro-new+ytmusic-play-button-renderer#play-button.ytmusic-item-thumbnail-overlay-re] Library | button#taro-new next to a card's play button | expected: tappable targets at least 8 px apart so a thumb hits one | actual: audit measured targets 3 px apart
 
 ## Rejected
 (idea: reason)
