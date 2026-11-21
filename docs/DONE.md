@@ -3,3 +3,4 @@
 - Header search/settings icons: hit area grown to 48 dp (::after). Chips (36 px) and inline text links left as YouTube draws them.
 - Offline page instead of Chromium error page (YtmWebView.onReceivedError)
 - Selector check: 15 s after load inject.js warns once in logcat (TaroMusic) if core YouTube elements are missing.
+- Idle check (iter 9): 0.0% CPU idle on home, 530 MB PSS, 1 WebView, 9 Views; 30 min growth not measured, no change needed.
