@@ -1,0 +1,1 @@
+- Reviewed layout sizes: all CSS px (dp-scaled), viewport values come from visualViewport/safe-area insets; no change needed. Untestable risk: fixed 48px nav bar under large system font scale.
