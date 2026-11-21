@@ -281,6 +281,9 @@
     'ytmusic-nav-bar ytmusic-search-box[is-mobile-view]:is([opened], [has-query]) { position: fixed !important;' +
       ' inset: ' + TOP + ' 0 auto 0 !important; margin: 0 !important; width: auto !important; height: 48px !important;' +
       ' border: 0 !important; border-radius: 0 !important; }',
+    // The box starts below the status bar, which would show the page's tinted backdrop: extend the box's black up over it.
+    'ytmusic-nav-bar ytmusic-search-box:is([opened], [has-query])::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%;' +
+      ' height: ' + TOP + '; background: rgb(3,3,3); pointer-events: none; }',
     'ytmusic-search-box:is([opened], [has-query]) :is(.search-container, .search-box) { height: 48px !important;' +
       ' border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }',
     // YouTube hides the back arrow once a search has run and the box loses focus; keep it (see onSearchBack).
