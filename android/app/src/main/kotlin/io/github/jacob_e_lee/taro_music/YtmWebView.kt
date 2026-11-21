@@ -8,6 +8,7 @@ import android.view.View
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -62,7 +63,12 @@ class YtmWebView(context: Context) : WebView(context) {
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 // Fallback for WebViews without document-start scripts (see init).
-                view.evaluateJavascript(script, null)
+                if (!url.startsWith("data:")) view.evaluateJavascript(script, null)
+            }
+
+            // Offline: Chromium's error page is a dead end, so show our own and retry every 4 s.
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) view.loadData(OFFLINE_PAGE, "text/html", "utf-8")
             }
 
             override fun onPageCommitVisible(view: WebView, url: String?) {
@@ -118,6 +124,12 @@ class YtmWebView(context: Context) : WebView(context) {
         super.onVisibilityAggregated(true)
 
     private companion object {
+        const val OFFLINE_PAGE = "<meta name=viewport content='width=device-width'>" +
+            "<body style='background:#030303;color:#aaa;font:16px sans-serif;display:flex;" +
+            "align-items:center;justify-content:center;height:100vh;margin:0;text-align:center'>" +
+            "<p>No connection.<br>Trying again…</p>" +
+            "<script>setTimeout(function(){location.href='https://music.youtube.com'},4000)</script>"
+
         // A stylesheet, not a periodic DOM walk: YouTube Music uses no shadow roots, so CSS reaches the button.
         val HIDE_OPEN_APP = """
             if (!window.__taroHideOpen) {
