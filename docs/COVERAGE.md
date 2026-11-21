@@ -6,10 +6,10 @@ Cells are Screen x State x Gesture. Runs per screen:
 |---|---|---|---|
 | Home | 4/32 | 4 | 0 |
 | Explore | 6/32 | 6 | 0 |
-| Library | 3/32 | 3 | 0 |
-| Search | 3/32 | 3 | 0 |
+| Library | 6/32 | 6 | 0 |
+| Search | 5/32 | 7 | 0 |
 | FullPlayer | 0/16 | 0 | 0 |
 | TabsPanel | 0/16 | 0 | 0 |
 | SongMenu | 1/6 | 3 | 0 |
 
-Untouched cells: 149/166 (next: Home|idle|fling-down, Home|idle|fling-up, Home|idle|slow-drag, Home|idle|long-press, Home|idle|double-tap)
+Untouched cells: 144/166 (next: Home|idle|fling-down, Home|idle|fling-up, Home|idle|slow-drag, Home|idle|long-press, Home|idle|double-tap)
