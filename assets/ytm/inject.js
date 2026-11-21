@@ -403,16 +403,21 @@
   // YouTube opens these as a dropdown at the tapped spot. Here the dropdown is restyled (see the CSS)
   // into a sheet under a bar with the song, its artist, a like button and a close button. Dragging
   // the sheet down, tapping the dimmed page or the close button slides it away.
-  var ROW = 'ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, ytmusic-player-bar';
+  var ROW = 'ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, ytmusic-player-bar, ytmusic-card-shelf-renderer';
   var menuRow = null, scrim = null, sheet = null;  // the title and artist of the row that opened the menu; the dimmer; the open dropdown
   // The menu doesn't say which song it is for; remember the last touch (3-dots or long press). Read the
   // text now: the row can be re-rendered or recycled before the menu opens, and a touch that isn't on a
   // row (a page header's menu) must not leave the previous song's name behind.
   document.addEventListener('pointerdown', function (e) {
     var r = e.target.closest && e.target.closest(ROW);
+    // The full player's own menu button sits in the page, not in a row: it is for the playing song.
+    if (!r && e.target.closest && e.target.closest('ytmusic-player-page #main-panel')) r = document.querySelector('ytmusic-player-bar');
     var q = function (s) { var x = r && r.querySelector(s); return x ? x.textContent.trim().replace(/\s+/g, ' ') : ''; };
     if (e.target.closest && e.target.closest('ytmusic-menu-popup-renderer')) return;  // a tap inside the open menu
-    menuRow = r && { title: q('.title'), artist: q('.secondary-flex-columns > *').split(' • ')[0] || q('.subtitle') || q('.byline') };
+    // The top-result card holds rows of its own, so its subtitle comes first. Search results lead with a type word.
+    var a = (r && r.matches('ytmusic-card-shelf-renderer') ? q('.subtitle') : q('.secondary-flex-columns > *') || q('.subtitle') || q('.byline')).split(' • ');
+    if (/^(Song|Video|Episode|Single|EP|Album|Playlist)$/.test(a[0]) && a[1]) a.shift();
+    menuRow = r && { title: q('.title'), artist: a[0] };
   }, true);
   // Touch feedback. A finger that lands on something marks it pressed until it lifts, moves off or the
   // browser takes the touch over to scroll (pointercancel), so a press that turns into a drag still shows.
