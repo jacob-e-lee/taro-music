@@ -4,3 +4,4 @@
 - Offline page instead of Chromium error page (YtmWebView.onReceivedError)
 - Selector check: 15 s after load inject.js warns once in logcat (TaroMusic) if core YouTube elements are missing.
 - Idle check (iter 9): 0.0% CPU idle on home, 530 MB PSS, 1 WebView, 9 Views; 30 min growth not measured, no change needed.
+- [ ] [F:small:Library:button#button.yt-icon-button] Library | button#button.yt-icon-button at 264,47 (header) | expected: touch target at least 44x44 css px (or padded hit area) | actual: audit measured 32x32 css px
