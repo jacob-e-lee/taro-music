@@ -239,21 +239,23 @@
       ' transition: opacity .25s; }',
     '#taro-scrim.on { opacity: 1; pointer-events: auto; }',
     'tp-yt-iron-dropdown.taro-menu { position: fixed !important; left: 0 !important; right: 0 !important; top: auto !important;' +
-      ' bottom: 0 !important; width: auto !important; max-width: none !important; max-height: none !important;' +
-      ' animation: taro-menu-up .25s cubic-bezier(.2,.8,.2,1); }',
+      ' bottom: ' + BOT + ' !important; width: auto !important; max-width: none !important; max-height: none !important;' +
+      ' box-shadow: 0 ' + BOT + ' 0 rgb(33,33,33); animation: taro-menu-up .25s cubic-bezier(.2,.8,.2,1); }',
     '@keyframes taro-menu-up { from { transform: translateY(100%); } }',
     'tp-yt-iron-dropdown.taro-menu #contentWrapper { background: rgb(33,33,33); border-radius: 16px 16px 0 0;' +
-      ' overflow-y: auto; overscroll-behavior: contain; max-height: 75vh; padding-bottom: ' + BOT + '; box-sizing: border-box; }',
+      ' overflow-y: auto; overscroll-behavior: contain; max-height: 65vh; box-sizing: border-box; }',
     // Swiping up on a sheet that has more to show first grows it to the top of the screen (see dragSheet).
     'tp-yt-iron-dropdown.taro-menu #contentWrapper { transition: max-height .25s; }',
-    'tp-yt-iron-dropdown.taro-menu.taro-tall #contentWrapper { max-height: calc(100vh - ' + TOP + '); }',
+    'tp-yt-iron-dropdown.taro-menu.taro-tall #contentWrapper { max-height: calc(100vh - ' + TOP + ' - ' + BOT + '); }',
     'tp-yt-iron-dropdown.taro-menu ytmusic-menu-popup-renderer { display: block; overflow: visible !important; max-height: none !important;' +
       ' width: auto !important; max-width: none !important; background: none; box-shadow: none; }',
     'tp-yt-iron-dropdown.taro-menu #items { border: 0 !important; outline: none; width: auto; }',
-    // YouTube's own `pressed` state can stick when a touch is dragged away; ours (taro-pressed) replaces it.
-    ':is(ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)[pressed]:not([taro-pressed]) { background: none !important; }',
+    'tp-yt-iron-dropdown.taro-menu tp-yt-paper-listbox { padding: 4px 0 8px !important; }',
+    // YouTube's own highlights (`pressed`, `focused` on the first item when the menu opens, sticky :hover after a long press) are all off; only ours (taro-pressed) shows.
+    ':is(ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer):not([taro-pressed]) { background: none !important; }',
     '.taro-liked-item { display: none !important; }',
-    '#taro-mh { display: flex; align-items: center; gap: 4px; padding: 20px 4px 8px 16px; position: relative;' +
+    '#taro-mh { display: flex; align-items: center; gap: 4px; padding: 20px 4px 8px 16px; position: sticky; top: 0; z-index: 1;' +
+      ' background: rgb(33,33,33);' +
       ' border-bottom: 1px solid rgba(255,255,255,.1); }',
     '#taro-mh::before { content: ""; position: absolute; top: 8px; left: 50%; width: 36px; height: 4px; margin-left: -18px;' +
       ' border-radius: 2px; background: rgba(255,255,255,.3); }',
@@ -483,7 +485,7 @@
     px = e.clientX; py = e.clientY;
     // A beat of delay, so a flick that scrolls at once doesn't flash.
     pressTarget = t;
-    pressTimer = setTimeout(function () { showPress(t); }, 100);
+    pressTimer = setTimeout(function () { showPress(t); }, t.closest('.taro-menu') ? 0 : 100);
     pressed = null;
   }, true);
   document.addEventListener('pointermove', function (e) {
@@ -557,12 +559,29 @@
   }
   // Dragging down anywhere on the sheet closes it, unless the sheet is scrolled (then it scrolls back first).
   // Touch events, not pointer events: only a cancelable touchmove can stop the list from scrolling.
+  var touch = { n: 0, y: 0, t: 0, target: null, menu: false };  // the latest touchstart
+  document.addEventListener('touchstart', function (e) {
+    touch = { n: touch.n + 1, y: e.touches[0].clientY, t: e.timeStamp, target: e.target, menu: !!sheet };
+  }, { passive: true, capture: true });
   function dragSheet(dd) {
-    var list = dd.querySelector('#contentWrapper'), y0 = 0, dy = 0, t0 = 0, drag = false, grow = false, h0 = 0, hMax = 0;
-    dd.addEventListener('touchstart', function (e) {
-      y0 = e.touches[0].clientY; t0 = e.timeStamp; dy = 0; drag = false; grow = false;
-    }, { passive: true });
-    dd.addEventListener('touchmove', function (e) {
+    var list = dd.querySelector('#contentWrapper'), y0 = 0, dy = 0, t0 = 0, drag = false, grow = false, h0 = 0, hMax = 0, own = false;
+    // On the document, not the sheet: a long press opens the menu under a finger that landed on the page
+    // behind it, and that touch's events keep going to the page. That touch must not drag the sheet (or
+    // scroll the page) until it is lifted; the listeners swallow it.
+    var on = function (n, f, o) { document.addEventListener(n, f, o); };
+    var seen = -1;
+    // The menu opens mid-touch, so this can't rely on seeing the touchstart: take it from `touch`.
+    var begin = function () {
+      seen = touch.n; y0 = touch.y; t0 = touch.t; dy = 0; drag = false; grow = false;
+      own = touch.menu && dd.contains(touch.target);  // only a touch that starts on the open sheet drags it
+    };
+    on('touchmove', function (e) {
+      if (sheet !== dd) return;
+      if (seen !== touch.n) begin();
+      if (!own) {
+        if (!touch.menu && e.cancelable) e.preventDefault();  // the long press that opened the menu: inert until lifted
+        return;
+      }
       var y = e.touches[0].clientY;
       if (!drag) {
         if (list.scrollTop > 0 && !grow) { y0 = y; t0 = e.timeStamp; return; }  // scrolling: start over from here
@@ -588,8 +607,9 @@
       dy = Math.max(0, y - y0);
       dd.style.transform = 'translateY(' + dy + 'px)';
       scrim.style.opacity = 1 - dy / dd.offsetHeight;
-    }, { passive: false });
+    }, { passive: false, capture: true });
     var up = function (e) {
+      if (sheet !== dd && !drag) return;
       if (grow) {
         // Past a little way, or a quick flick, it goes the rest of the way; otherwise it settles back.
         var big = list.offsetHeight - h0 > 40 || (list.offsetHeight - h0) / (e.timeStamp - t0) > 0.3;
@@ -607,9 +627,20 @@
       dd.style.transform = '';
       scrim.style.opacity = '';
     };
-    dd.addEventListener('touchend', up);
-    dd.addEventListener('touchcancel', up);
+    on('touchend', up, true);
+    on('touchcancel', up, true);
   }
+  // Tapping an item: YouTube's own close is instant (and a navigation item like Start Mix doesn't close at
+  // all), so hold its close() and slide the sheet away ourselves. The item's action still runs.
+  document.addEventListener('pointerup', function (e) {
+    if (!sheet || longPressed || e.pointerType !== 'touch' ||
+        Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 16) return;
+    var item = e.target.closest && e.target.closest(
+      'ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer');
+    if (!item || !sheet.contains(item)) return;
+    sheet.close = function () {};
+    closeSheet();
+  }, true);
   // Called for each dropdown YouTube adds. `opened` isn't an attribute; Polymer flips aria-hidden with it.
   function watchMenu(dd) {
     if (dd.__taroWatched) return;
@@ -1027,7 +1058,7 @@
     drag.p0 = sheetP;
   }, { capture: true, passive: true });
   document.addEventListener('touchmove', function (e) {
-    if (!drag) return;
+    if (!drag || sheet) return;  // an open song menu owns the touch (a long press opens it under the finger)
     var d = drag, y = e.touches[0].clientY, now = Date.now();
     d.dx = e.touches[0].clientX - d.x;
     d.dy = y - d.y;
@@ -1108,7 +1139,7 @@
     ptr = { id: tab[2], x: e.touches[0].clientX, y: e.touches[0].clientY, on: false, pull: 0 };
   }, { capture: true, passive: true });
   document.addEventListener('touchmove', function (e) {
-    if (!ptr) return;
+    if (!ptr || sheet) { if (sheet && ptr && ptr.on) ptrEnd(e); ptr = null; return; }
     var dx = e.touches[0].clientX - ptr.x, dy = e.touches[0].clientY - ptr.y;
     if (!ptr.on) {
       if (dy < -8 || Math.abs(dx) > Math.abs(dy) + 8 || window.scrollY > 0) { ptr = null; return; }
