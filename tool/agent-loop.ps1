@@ -26,7 +26,7 @@ try {
 function Save { try { [IO.File]::WriteAllText($stateFile, ($S | ConvertTo-Json)) } catch {} }
 function Devices { @(& $adb devices | Select-String '\sdevice$') }
 function Stopped { Test-Path $stop }
-function Say($m) { Add-Content $log "$((Get-Date).ToString('s')) $m" }
+function Say($m) { $l = "$((Get-Date).ToString('s')) $m"; Add-Content $log $l; Write-Host $l }
 
 function Wait-For($sec, $phase) {
     $end = (Get-Date).AddSeconds($sec)

@@ -32,10 +32,8 @@ function Stop-Agent {
 function Start-Agent {
     if (-not (Test-Running)) {
         Remove-Item $stop -ErrorAction SilentlyContinue
-        Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$T\agent-loop.ps1`""
-        Start-Sleep 2
-    }
-    Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", 'view'
+        Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSScriptRoot/agent-loop.ps1`""   # visible window: the agent runs in it, closing it stops it
+    } else { Write-Host 'already running' }
 }
 
 function Get-Frame {   # about 10 lines, no model calls
