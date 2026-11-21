@@ -68,7 +68,13 @@ function addFindings(list) {   // dedupe against BACKLOG/DONE keys, suppress fal
 const adb = (...a) => execFileSync(ADB, a, { encoding: 'utf8', timeout: 15000 }).trim();
 function preflight() {
   try {
-    const t = adb('shell', 'dumpsys window | grep -E "mCurrentFocus|mCurrentRotation"');
+    const look = () => adb('shell', 'dumpsys window | grep -E "mCurrentFocus|mCurrentRotation"');
+    let t = look();
+    if (!t.includes(APP)) {   // the phone is on the launcher: bring our own app forward, then re-check
+      adb('shell', `am start -n ${APP}/.MainActivity`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6000);
+      t = look();
+    }
     if (!t.includes(APP) || !/mCurrentRotation=(ROTATION_)?0/.test(t)) throw new Error('not portrait or app not focused');
   } catch (e) { console.log(`ABORT: ${e.message}`); process.exit(3); }
 }
