@@ -1072,6 +1072,84 @@
   document.addEventListener('touchend', release, { capture: true, passive: true });
   document.addEventListener('touchcancel', release, { capture: true, passive: true });
 
+  // ---- Pull to refresh: drag down from the top of Home / Explore / Library, release past the threshold to refetch it. ----
+  addStyle(
+    '#taro-ptr { position: fixed; left: 50%; top: calc(' + TOP + ' + 48px); width: 36px; height: 36px; margin: 8px 0 0 -18px;' +
+      ' border-radius: 50%; background: rgb(40,40,40); box-shadow: 0 2px 8px rgba(0,0,0,.5); z-index: 5; opacity: 0;' +
+      ' pointer-events: none; display: flex; align-items: center; justify-content: center; will-change: transform, opacity; }' +
+    '#taro-ptr svg { width: 22px; height: 22px; }' +
+    '#taro-ptr.spin svg { animation: taro-ptr-spin .8s linear infinite; }' +
+    '@keyframes taro-ptr-spin { to { transform: rotate(360deg); } }' +
+    // No stretch / glow on the page at its top: the pull is drawn by the spinner alone.
+    'html, body { overscroll-behavior-y: none; }');
+  var ptr = null, ptrEl = null, PTR_AT = 56;
+  function ptrDraw(pull) {
+    if (!ptrEl) {
+      var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), c = document.createElementNS(ns, 'circle');
+      ptrEl = document.createElement('div');
+      ptrEl.id = 'taro-ptr';
+      svg.setAttribute('viewBox', '0 0 24 24');
+      [['cx', 12], ['cy', 12], ['r', 9], ['fill', 'none'], ['stroke', '#fff'], ['stroke-width', 2.5],
+        ['stroke-linecap', 'round'], ['stroke-dasharray', '42 57']].forEach(function (a) { c.setAttribute(a[0], a[1]); });
+      svg.appendChild(c);
+      ptrEl.appendChild(svg);
+      document.documentElement.appendChild(ptrEl);
+    }
+    ptrEl.style.opacity = Math.min(1, pull / PTR_AT);
+    ptrEl.style.transform = 'translateY(' + (pull * 0.6 - 20) + 'px)';
+    ptrEl.firstChild.style.transform = 'rotate(' + pull * 5 + 'deg)';
+  }
+  document.addEventListener('touchstart', function (e) {
+    ptr = null;
+    // Not over the player, a menu, search or the bars (they have their own drags and scrollers).
+    var tab = TABS.filter(function (t) { return t[1] === location.pathname; })[0];
+    if (!tab || e.touches.length !== 1 || window.scrollY > 0 || document.documentElement.classList.contains('taro-open') ||
+      e.target.closest('ytmusic-player-page, ytmusic-player-bar, ytmusic-search-box, tp-yt-iron-dropdown, #taro-nav, #side-panel')) return;
+    ptr = { id: tab[2], x: e.touches[0].clientX, y: e.touches[0].clientY, on: false, pull: 0 };
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!ptr) return;
+    var dx = e.touches[0].clientX - ptr.x, dy = e.touches[0].clientY - ptr.y;
+    if (!ptr.on) {
+      if (dy < -8 || Math.abs(dx) > Math.abs(dy) + 8 || window.scrollY > 0) { ptr = null; return; }
+      // Stop the scroll from the first downward move: once the browser has begun scrolling, moves can't be cancelled.
+      if (dy > Math.abs(dx) && e.cancelable) e.preventDefault();
+      if (dy < 12) return;
+      ptr.on = true;
+    }
+    // Once pulling, dragging back up shrinks the pull to nothing instead of ending it.
+    ptr.pull = Math.max(0, Math.min(dy * 0.5, 90));
+    ptrDraw(ptr.pull);
+    // Own the touch from here: otherwise, when the finger reverses, the browser scrolls the page.
+    if (e.cancelable) e.preventDefault();
+  }, { capture: true, passive: false });
+  function ptrEnd(e) {
+    if (!ptr) return;
+    var p = ptr;
+    ptr = null;
+    if (!p.on) return;
+    if (e.type === 'touchend' && p.pull >= PTR_AT) {
+      ptrEl.style.transition = 'transform .15s ease-out';
+      ptrEl.style.transform = 'translateY(' + (PTR_AT * 0.6 - 20) + 'px)';
+      ptrEl.classList.add('spin');
+      // Navigating to the page we're on makes YouTube fetch it again: new recommendations, no reload.
+      go(p.id);
+      setTimeout(function () {
+        ptrEl.style.transition = 'transform .2s ease-out, opacity .2s';
+        ptrEl.style.transform = 'translateY(-20px)';
+        ptrEl.style.opacity = 0;
+        setTimeout(function () { ptrEl.classList.remove('spin'); ptrEl.style.transition = ''; }, 220);
+      }, 1200);
+      return;
+    }
+    ptrEl.style.transition = 'transform .2s ease-out, opacity .2s';
+    ptrEl.style.transform = 'translateY(-20px)';
+    ptrEl.style.opacity = 0;
+    setTimeout(function () { if (ptrEl) ptrEl.style.transition = ''; }, 220);
+  }
+  document.addEventListener('touchend', ptrEnd, { capture: true, passive: true });
+  document.addEventListener('touchcancel', ptrEnd, { capture: true, passive: true });
+
   // ---- Android media controls (MediaControls.kt): report what's playing, run its commands. ----
   // TaroMedia exists only in the YouTube Music page (YtmWebView.kt).
   if (window.TaroMedia) {

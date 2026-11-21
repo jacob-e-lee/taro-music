@@ -31,6 +31,7 @@ Taro Music turns the YouTube Music website into a proper mobile app.
 - Lock screen and notification controls
 - Mobile-friendly UI
   - Swipe gestures
+  - Pull down to refresh Home, Explore and Library
   - Bottom navigation bar
   - Full screen (draws behind the Android status bar and navigation buttons)
 
