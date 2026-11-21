@@ -1,9 +1,0 @@
-- Reviewed layout sizes: all CSS px (dp-scaled), viewport values come from visualViewport/safe-area insets; no change needed. Untestable risk: fixed 48px nav bar under large system font scale.
-- Accessibility: aria-label on menu header like/close buttons (tab bar already has text labels)
-- Header search/settings icons: hit area grown to 48 dp (::after). Chips (36 px) and inline text links left as YouTube draws them.
-- Offline page instead of Chromium error page (YtmWebView.onReceivedError)
-- Selector check: 15 s after load inject.js warns once in logcat (TaroMusic) if core YouTube elements are missing.
-- Idle check (iter 9): 0.0% CPU idle on home, 530 MB PSS, 1 WebView, 9 Views; 30 min growth not measured, no change needed.
-- [ ] [F:small:Library:button#button.yt-icon-button] Library | button#button.yt-icon-button at 264,47 (header) | expected: touch target at least 44x44 css px (or padded hit area) | actual: audit measured 32x32 css px
-- [F:small:Library:button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextText] Library | button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextText at 132,152 | expected: touch target at least 44x44 css px | actual: audit measured 36x36 css px
-- [ ] [F:small:Home:a.yt-simple-endpoint.ytmusic-logo] Home | a.yt-simple-endpoint.ytmusic-logo at 16,51 (header logo) | expected: touch target at least 44x44 css px | actual: audit measured 71x24 css px
