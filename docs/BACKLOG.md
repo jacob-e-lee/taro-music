@@ -3,13 +3,13 @@
 One line per item. `- [ ]` open. The agent adds findings here and moves finished items to docs/DONE.md.
 
 ## Open
-- [ ] [F:thumb:TabsPanel:.play-pause-button] TabsPanel | tap play/pause in mini bar with up-next panel open | expected: play/pause reachable in lower thumb zone (y > ~50% of 780 css px) | actual: .play-pause-button centre at y=71 of 780 css px, out of easy thumb reach
 - [ ] [F:thumb:TabsPanel:.next-button] TabsPanel | tap next in mini bar with up-next panel open | expected: next reachable in lower thumb zone | actual: .next-button centre at y=71 of 780 css px, out of easy thumb reach
 - [ ] [F:thumb:TabsPanel:ytmusic-player-page_tp-yt-paper-tab] TabsPanel | tap Up next / Lyrics / Related tabs | expected: tab switcher within thumb reach | actual: tp-yt-paper-tab centre at y=143 of 780 css px, out of easy thumb reach
 - [ ] [F:motion:FullPlayer:player-sheet-close] FullPlayer | close full player (sheet close) | expected: sheet slides down over several frames | actual: lens motion measured only 1 distinct position in 700 ms (jumps), same result on 2 runs
 - [ ] [F:motion:SongMenu:song-menu-open] SongMenu | open song menu | expected: sheet slides up over several frames | actual: lens motion measured only 1 distinct position in 700 ms (jumps), same result on 2 runs
 
 ## Rejected
+- [F:thumb:TabsPanel:.play-pause-button] not reproducible: lens thumb run twice, no TabsPanel finding (the y=71 hit was the invisible top player bar)
 - [F:bottom-inset:Home:a.yt-simple-endpoint.anchor-link] not reproducible: two audits, no bottom-inset finding
 - [M:hygiene-397] nothing to prune: no unused identifiers, taro-* classes, imports or duplicate channel calls found; inject.js split needs a build step, not worth the risk
 - [F:bottom-inset:Home:ytmusic-two-row-item-renderer.ytmusic-carousel] not reproducible: two audits, no bottom-inset finding
