@@ -9,6 +9,10 @@ $claude = if ($env:AGENT_CLAUDE) { $env:AGENT_CLAUDE } else { (Get-Command claud
 $IterTimeoutMin = 30
 $MinGapSec = 20   # keeps an idle agent from spinning on tokens
 
+# Stop Windows idle-sleeping while the loop runs; released automatically when this process ends.
+Add-Type -Namespace W -Name P -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);'
+[void][W.P]::SetThreadExecutionState(0x80000001)
+
 $S = [ordered]@{ loopPid = $PID; claudePid = 0; phase = 'starting'; iter = 0; item = ''; result = ''; fails = 0; cost = 0.0; until = ''; wip = $false; limitHits = 0 }
 try {
     $old = Get-Content $stateFile -Raw -ErrorAction Stop | ConvertFrom-Json
