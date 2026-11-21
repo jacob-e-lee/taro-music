@@ -16,11 +16,12 @@ Add-Type -Namespace W -Name P -MemberDefinition '[DllImport("kernel32.dll")] pub
 # Real phone only (no emulators): every adb call in every child script targets it.
 $env:ANDROID_SERIAL = "RFGL34ZRQ2H"
 
-$S = [ordered]@{ loopPid = $PID; claudePid = 0; phase = 'starting'; iter = 0; item = ''; result = ''; fails = 0; cost = 0.0; until = ''; wip = $false; limitHits = 0; mode = ''; stale = 0; harvests = 0; open = 0 }
+$S = [ordered]@{ loopPid = $PID; claudePid = 0; phase = 'starting'; iter = 0; item = ''; result = ''; fails = 0; cost = 0.0; until = ''; wip = $false; limitHits = 0; mode = ''; stale = 0; harvests = 0; open = 0; builds = 0; wishes = 0; hygieneAt = -1 }
 try {
     $old = Get-Content $stateFile -Raw -ErrorAction Stop | ConvertFrom-Json
     if ($old.loopPid -ne $PID -and $old.phase -ne 'off' -and (Get-Process -Id $old.loopPid -ErrorAction SilentlyContinue)) { exit }  # already running
     $S.iter = [int]$old.iter; $S.cost = [double]$old.cost; $S.stale = [int]$old.stale; $S.harvests = [int]$old.harvests
+    $S.builds = [int]$old.builds; $S.hygieneAt = $(if ($null -ne $old.hygieneAt) { [int]$old.hygieneAt } else { -1 })
 } catch {}
 
 function Save { try { [IO.File]::WriteAllText($stateFile, ($S | ConvertTo-Json)) } catch {} }
@@ -113,21 +114,29 @@ if (-not $claude) { $S.phase = 'off'; $S.result = 'claude not found'; Save; exit
 
 # ---- harvest / build modes: the loop, not the model, decides whether a run counted ----
 $Allowed = 'docs/BACKLOG.md', 'docs/COVERAGE.md'
-$attempts = @{}
+$PlanAllowed = 'docs/BACKLOG.md', 'docs/WISHLIST.md'
+$attempts = @{}; $planFails = @{}
 function Open-Lines { if (Test-Path docs\BACKLOG.md) { @(Get-Content docs\BACKLOG.md | Where-Object { $_ -match '^- \[ \] ' }) } else { @() } }
+function Open-Wishes { if (Test-Path docs\WISHLIST.md) { @(Get-Content docs\WISHLIST.md | Where-Object { $_ -match '^- \[ \] \S' }) } else { @() } }
+function Add-Ticket($line) {   # top of ## Open, so it ships before older tickets
+    $lines = @(Get-Content docs\BACKLOG.md); $i = [Array]::IndexOf($lines, '## Open')
+    if ($i -lt 0) { return }
+    $lines = $lines[0..$i] + $line + $(if ($i + 1 -lt $lines.Count) { $lines[($i + 1)..($lines.Count - 1)] } else { @() })
+    [IO.File]::WriteAllLines("$PWD\docs\BACKLOG.md", $lines)
+}
 function Dirty { @(git status --porcelain | Where-Object { $_ }) }
 
 # Harvest must not touch anything: put every changed file back (BACKLOG is handled by Finish-Harvest).
 function Revert-All($keep) {
     foreach ($l in Dirty) {
         $p = $l.Substring(3).Trim('"')
-        if ($keep -and $Allowed -contains $p) { continue }
+        if ($keep -contains $p) { continue }
         if ($l.StartsWith('??')) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue } else { git checkout HEAD -- $p }
     }
 }
 
 function Finish-Harvest($before) {
-    Revert-All $true
+    Revert-All $Allowed
     $keys = @{}
     try { (Get-Content "$T\.findings.json" -Raw -ErrorAction Stop | ConvertFrom-Json) | ForEach-Object { $keys[$_.key] = 1 } } catch {}
     $valid = 0; $manual = 0; $seen = @{}
@@ -154,6 +163,31 @@ function Finish-Harvest($before) {
     Say $S.result
 }
 
+function Finish-Plan($before, $wish) {   # a wish became 1-3 well-formed [W:] tickets and exactly that wish got ticked
+    Revert-All $PlanAllowed
+    $new = @(Open-Lines | Where-Object { $before -notcontains $_ })
+    $good = @($new | Where-Object { $_ -match '^- \[ \] \[W:[^\]]+\] .+\|.+\|.+\|.+' })
+    $ticked = (@(git show HEAD:docs/WISHLIST.md | Where-Object { $_ -match '^- \[ \] ' }).Count) - (Open-Wishes).Count
+    if ($good.Count -ge 1 -and $good.Count -le 3 -and $ticked -eq 1) {
+        $slug = ([regex]::Match($good[0], '\[W:([^\]]+)\]')).Groups[1].Value
+        git add docs/BACKLOG.md docs/WISHLIST.md
+        git commit -q -m "docs: Plan wish $slug"
+        git pull --rebase -q; git push -q origin main
+        $S.result = "planned wish $slug into $($good.Count) tickets"
+    } else {
+        git checkout HEAD -- docs/BACKLOG.md docs/WISHLIST.md
+        $planFails[$wish] = 1 + [int]$planFails[$wish]
+        $S.result = "plan rejected ($($good.Count) good tickets, $ticked wishes ticked), attempt $($planFails[$wish])"
+        if ($planFails[$wish] -ge 2) {   # give up on this wish so the loop moves on
+            $w = (Get-Content docs\WISHLIST.md) -replace ('^' + [regex]::Escape($wish) + '$'), (($wish -replace '^- \[ \]', '- [!]') + ' (planning failed twice: rewrite it)')
+            [IO.File]::WriteAllLines("$PWD\docs\WISHLIST.md", $w)
+            git add docs/WISHLIST.md; git commit -q -m "docs: Park wish the planner could not turn into tickets"
+            git pull --rebase -q; git push -q origin main
+        }
+    }
+    Say $S.result
+}
+
 function Finish-Build($head0, $top) {
     if ($top -and (Open-Lines) -notcontains $top) { $attempts.Remove($top); return }   # fixed, or rejected with a reason by the agent
     $head1 = (git rev-parse HEAD)
@@ -163,7 +197,7 @@ function Finish-Build($head0, $top) {
     $attempts[$top] = 1 + [int]$attempts[$top]
     Say "build made no code change for: $top (attempt $($attempts[$top]))"
     if ($attempts[$top] -ge 2) {
-        $tag = if ($top -match '\[(?:F|M):[^\]]+\]') { $Matches[0] } else { '[M:unknown]' }
+        $tag = if ($top -match '\[(?:F|M|W):[^\]]+\]') { $Matches[0] } else { '[M:unknown]' }
         $lines = @(Get-Content docs\BACKLOG.md | Where-Object { $_ -ne $top })
         $i = [Array]::IndexOf($lines, '## Rejected')
         if ($i -ge 0) { $lines = $lines[0..$i] + "- $tag 2 build attempts, no code change" + $(if ($i + 1 -lt $lines.Count) { $lines[($i + 1)..($lines.Count - 1)] } else { @() }) }
@@ -181,27 +215,41 @@ while (-not (Stopped)) {
     if (-not $env:AGENT_TEST -and -not (Devices)) { Wait-Phone; if (Stopped) { break } }   # both modes need the phone (AGENT_TEST: stub runs)
     $dirty = (Dirty).Count -gt 0
     if (-not $dirty) { git pull --rebase -q }
+    if (-not $dirty -and $S.hygieneAt -lt 0) { $S.hygieneAt = $S.iter }   # first run: start counting, no ticket now
+    if (-not $dirty -and ($S.iter - $S.hygieneAt) -ge 10 -and -not (Select-String -Path docs\BACKLOG.md -Pattern '\[M:hygiene-' -Quiet)) {
+        Add-Ticket "- [ ] [M:hygiene-$($S.iter)] Code | prune dead CSS/JS in inject.js, split any file over ~600 lines, merge duplicate platform-channel calls | expected: same behaviour, smaller code, gate passes | actual: nothing pruned in the last 10 iterations"
+        git add docs/BACKLOG.md; git commit -q -m "docs: Queue hygiene ticket"; git pull --rebase -q; git push -q origin main
+        $S.hygieneAt = $S.iter
+    }
     $open = Open-Lines
-    $mode = if ($dirty -or $open.Count -ge 5) { 'build' } else { 'harvest' }
+    $wishes = @(if ($dirty) { @() } else { Open-Wishes })
+    $S.wishes = $wishes.Count
+    $mode = if ($dirty) { 'build' } elseif ($wishes.Count -and [int]$planFails[[string]$wishes[0]] -lt 2) { 'plan' } elseif ($open.Count -ge 5) { 'build' } else { 'harvest' }
     $top = if ($open.Count) { [string]$open[0] } else { '' }
     if ($mode -eq 'harvest' -and $S.stale -ge 6) { Wait-For $(if ($S.stale -ge 8) { 3600 } else { 1800 }) 'waiting-nothing-new'; if (Stopped) { break } }
     $S.iter++; $S.mode = $mode; $S.open = $open.Count; $S.phase = $mode; $S.item = $top; Save
     Say "iter $($S.iter) start: $mode (stale $($S.stale), open $($open.Count))$(if ($top) { " | " + $top.Substring(0, [Math]::Min(90, $top.Length)) })"
     $head0 = (git rev-parse HEAD)
-    if ($mode -eq 'harvest') {
+    if ($mode -eq 'plan') {
+        $wish = [string]$wishes[0]
+        $r = Run-Claude ("ITER: $($S.iter)`nWISH: $wish`n" + (Get-Content "$T\plan-prompt.md" -Raw)) 30 $env:AGENT_HARVEST_MODEL
+    } elseif ($mode -eq 'harvest') {
         $S.harvests++
         Remove-Item "$T\.findings.json" -ErrorAction SilentlyContinue
         $chaos = ($S.stale -ge 2) -or ($S.harvests % 5 -eq 0)
-        $head = "ITER: $($S.iter)`nSTALE: $($S.stale)`nCHAOS: $(if ($chaos) { 'yes: add --cells 5 --chaos to the wander' } else { 'no' })`n"
+        $lens = 'thumb-zone', 'micro-interactions', 'edge-states'
+        $head = "ITER: $($S.iter)`nSTALE: $($S.stale)`nLENS: $($lens[$S.harvests % 3])`nCHAOS: $(if ($chaos) { 'yes: add --cells 5 --chaos to the wander' } else { 'no' })`n"
         $r = Run-Claude ($head + (Get-Content "$T\harvest-prompt.md" -Raw)) 40 $env:AGENT_HARVEST_MODEL
     } else {
         $model = if ($env:AGENT_BUILD_MODEL) { $env:AGENT_BUILD_MODEL } elseif ($attempts[$top]) { $env:AGENT_HARVEST_MODEL } else { 'sonnet' }
-        $head = "ITER: $($S.iter)`nTOP TICKET: $top`n"
+        $S.builds++
+        $full = ($S.builds % 3 -eq 0)
+        $head = "ITER: $($S.iter)`nTOP TICKET: $top`nGATE: $(if ($full) { 'tool/gate.ps1 -Full' } else { 'tool/gate.ps1' })`n"
         $r = Run-Claude ($head + (Get-Content "$T\build-prompt.md" -Raw)) 80 $model
     }
     if ($r.stopped) { break }
     $c = if ($r.unplugged -or $r.timeout) { 'abort' } else { Classify $r }
-    if ($mode -eq 'harvest' -and $c -ne 'ok') { Revert-All $false }
+    if ($mode -ne 'build' -and $c -ne 'ok') { Revert-All $null }
     $S.wip = (Dirty).Count -gt 0
     if ($r.unplugged) { $S.result = 'phone unplugged mid-iteration'; Say $S.result; Wait-Phone; continue }
     if ($r.timeout) { $S.fails++; $S.result = 'iteration timed out'; Say $S.result; Wait-For 60 'backoff'; continue }
@@ -211,7 +259,7 @@ while (-not (Stopped)) {
             $cost = if ($r.json.total_cost_usd) { [double]$r.json.total_cost_usd } else { 0 }
             $S.cost += $cost
             $res = ([string]$r.json.result).Trim()
-            if ($mode -eq 'harvest') { Finish-Harvest $open } else { Finish-Build $head0 $top; $S.result = if ($res.Length -gt 140) { $res.Substring(0, 140) } else { $res } }
+            if ($mode -eq 'plan') { Finish-Plan $open $wish } elseif ($mode -eq 'harvest') { Finish-Harvest $open } else { Finish-Build $head0 $top; $S.result = if ($res.Length -gt 140) { $res.Substring(0, 140) } else { $res } }
             Say "iter $($S.iter) $mode ok (`$$([Math]::Round($cost, 2))): $($S.result)"
         }
         'limit' { Say 'limit hit'; Save; Wait-Limit $r }

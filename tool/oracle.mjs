@@ -1,20 +1,20 @@
 // Deterministic defect finder for the harvest agent: findings come from measurements, not from the model's impressions.
 //   node tool/oracle.mjs audit                         static hit-box / inset / truncation audit of the current screen
+//   node tool/oracle.mjs lens thumb|motion|edge      one rotating harvest lens (thumb reach, animation continuity, long text / slow network)
 //   node tool/oracle.mjs wander [--cells N] [--cell "Screen|State|Gesture"] [--reps K] [--chaos]
 //                                                       human-ish real touches in the least-covered cells, before/after diffs
 // Writes findings to tool/.findings.json (merged across calls; the loop deletes it at the start of a harvest),
 // per-gesture diffs to tool/.gestures.json, and coverage counts to tool/coverage.json (all git-ignored).
 // Exit 3: phone not in portrait / app not focused / no phone. Page-level network emulation is always restored.
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sleep, rnd, J, adb, APP, preflight, connect, send, ev, exceptions, PAGE, P, touch, drag, tap, hold, nav, cleanUp, ensurePlaying } from './cdp.mjs';
+export { PAGE };
 
 const T = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(T);
 const F = { findings: path.join(T, '.findings.json'), gestures: path.join(T, '.gestures.json'), cov: path.join(T, 'coverage.json') };
-const ADB = path.join(process.env.LOCALAPPDATA || '', 'Android', 'Sdk', 'platform-tools', 'adb.exe');
-const APP = 'io.github.jacob_e_lee.taro_music';
 const SHOWN_LIMIT = 3; // a finding shown this often without becoming a ticket is treated as a false positive
 
 // ---------- cells ----------
@@ -39,9 +39,6 @@ export function pickCells(cov, n, rnd = Math.random) {
   return open.slice(0, n);
 }
 export const loadJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const rnd = (a, b) => a + Math.random() * (b - a);
-const J = (v, r) => v + rnd(-r, r);
 
 function backlogContext() {
   const read = f => { try { return fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { return ''; } };
@@ -49,7 +46,7 @@ function backlogContext() {
   return { keys: new Set([...knownKeys(b), ...knownKeys(read('docs/DONE.md'))]), rejected: b.split('## Rejected')[1] || '' };
 }
 
-function addFindings(list) {   // dedupe against BACKLOG/DONE keys, suppress false positives, merge into the findings file
+export function addFindings(list) {   // dedupe against BACKLOG/DONE keys, suppress false positives, merge into the findings file
   const ctx = backlogContext();
   const cov = loadJson(F.cov, { cells: {}, shown: {} });
   const out = loadJson(F.findings, []);
@@ -65,96 +62,7 @@ function addFindings(list) {   // dedupe against BACKLOG/DONE keys, suppress fal
 }
 
 // ---------- phone / DevTools ----------
-const adb = (...a) => execFileSync(ADB, a, { encoding: 'utf8', timeout: 15000 }).trim();
-function preflight() {
-  try {
-    const look = () => adb('shell', 'dumpsys window | grep -E "mCurrentFocus|mCurrentRotation"');
-    let t = look();
-    if (!t.includes(APP)) {   // the phone is on the launcher: bring our own app forward, then re-check
-      adb('shell', `am start -n ${APP}/.MainActivity`);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6000);
-      t = look();
-    }
-    if (!t.includes(APP) || !/mCurrentRotation=(ROTATION_)?0/.test(t)) throw new Error('not portrait or app not focused');
-  } catch (e) { console.log(`ABORT: ${e.message}`); process.exit(3); }
-}
 
-let ws, nextId = 0; const waiting = new Map(); const exceptions = [];
-const send = (method, params = {}) => new Promise((res, rej) => {
-  const id = ++nextId; waiting.set(id, m => (m.error ? rej(new Error(m.error.message)) : res(m.result)));
-  ws.send(JSON.stringify({ id, method, params }));
-});
-const ev = async expr => (await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })).result?.value;
-
-async function connect() {
-  const pid = adb('shell', 'pidof', APP).split(/\s+/)[0];
-  if (!pid) { console.log('ABORT: app not running'); process.exit(3); }
-  adb('forward', 'tcp:9222', `localabstract:webview_devtools_remote_${pid}`);
-  let page;
-  for (let i = 0; i < 20 && !page; i++) {
-    try { page = (await (await fetch('http://localhost:9222/json/list')).json()).find(t => t.type === 'page' && /music\.youtube\.com/.test(t.url)); } catch {}
-    if (!page) await sleep(500);
-  }
-  if (!page) { console.log('ABORT: no page target'); process.exit(3); }
-  ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise(r => (ws.onopen = r));
-  ws.onmessage = e => {
-    const m = JSON.parse(e.data);
-    if (m.id) waiting.get(m.id)?.(m);
-    else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails?.exception?.description || m.params.exceptionDetails?.text || '');
-  };
-  await send('Runtime.enable');
-}
-
-// ---------- in-page helpers ----------
-const INTER = 'button,a[href],[role=button],tp-yt-paper-tab,tp-yt-paper-item,ytmusic-responsive-list-item-renderer,ytmusic-two-row-item-renderer,ytmusic-menu-service-item-renderer,ytmusic-player-bar,input';
-export const PAGE = `(() => {
-  const INTER = ${JSON.stringify(INTER)};
-  const sel = e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') +
-    [...e.classList].filter(c => !/\\d|scope|taro-pressed|^style/.test(c)).slice(0, 2).map(c => '.' + c).join('');
-  const inset = side => { const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;left:0;width:1px;visibility:hidden;' + side + ':0;height:env(safe-area-inset-' + side + ')';
-    document.documentElement.appendChild(d); const h = d.getBoundingClientRect().height; d.remove(); return h; };
-  const screen = () => {
-    const h = document.documentElement, p = location.pathname;
-    if (document.querySelector('.taro-menu')) return 'SongMenu';
-    if (h.classList.contains('taro-open')) { const pg = document.querySelector('ytmusic-player-page'); return pg && pg.getAttribute('player-page-ui-state') === 'TABS_VIEW' ? 'TabsPanel' : 'FullPlayer'; }
-    return p === '/' ? 'Home' : p.startsWith('/explore') ? 'Explore' : p.startsWith('/library') ? 'Library' : p.startsWith('/search') ? 'Search' : 'Other';
-  };
-  const shown = e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e);
-    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth && s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0; };
-  const unsafe = (x, y) => { let e = document.elementFromPoint(x, y);   // like / save / playlist / delete / ... never get tapped
-    for (let i = 0; e && i < 5; i++, e = e.parentElement) {
-      const t = (e.getAttribute('aria-label') || e.getAttribute('title') || '') + ' ' + (e.matches(INTER) ? (e.innerText || '').slice(0, 60) : '');
-      if (/like|save|library|playlist|delete|remove|add to|subscribe|download|share|report|sign|feedback|queue|radio|mix/i.test(t)) return true; }
-    return false; };
-  const snap = () => { const v = document.querySelector('video'), pg = document.querySelector('ytmusic-player-page'), bar = document.querySelector('ytmusic-player-bar'),
-      cw = document.querySelector('#contentWrapper');
-    return { href: location.pathname + location.search, html: document.documentElement.className, paused: v ? v.paused : null,
-      t: v ? Math.round(v.currentTime) : null, y: Math.round(scrollY), cw: cw ? Math.round(cw.scrollTop) : null,
-      menu: !!document.querySelector('.taro-menu'), state: pg && pg.getAttribute('player-page-ui-state'),
-      tr: [pg, bar].map(e => e && e.style.transform) }; };
-  const at = (x, y) => { const e = document.elementFromPoint(x, y); if (!e) return null; const i = e.closest(INTER), r = i && i.getBoundingClientRect();
-    return { sel: sel(e), inter: i ? sel(i) : null, inside: !!(r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) }; };
-  return { INTER, sel, inset, screen, shown, unsafe, snap, at };
-})()`;
-const P = fn => `(${PAGE}).${fn}`;     // P('snap()') evaluates a helper on the live page
-
-// ---------- real touches ----------
-const tp = (x, y) => [{ x, y, id: 0, radiusX: 6, radiusY: 6, force: 0.5 }];
-const touch = (type, x, y) => send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : tp(x, y) });
-async function drag(x1, y1, x2, y2, ms, wobble = 4) {
-  await touch('touchStart', x1, y1);
-  const steps = Math.max(4, Math.round(ms / 16));
-  for (let i = 1; i <= steps; i++) {
-    const f = i / steps, e = f * f * (3 - 2 * f);   // ease in/out, uneven like a hand
-    await touch('touchMove', J(x1 + (x2 - x1) * e, wobble), y1 + (y2 - y1) * e);
-    await sleep(ms / steps * rnd(0.6, 1.4));
-  }
-  await touch('touchEnd', x2, y2);
-}
-const tap = async (x, y) => { x = J(x, 6); y = J(y, 6); await touch('touchStart', x, y); await sleep(rnd(40, 120)); await touch('touchEnd', x, y); };
-const hold = async (x, y) => { x = J(x, 4); y = J(y, 4); await touch('touchStart', x, y); await sleep(rnd(550, 950)); await touch('touchEnd', x, y); };
 
 async function perform(g, x, y, W, H) {
   const dy = rnd(250, 600), up = Math.random() < 0.5;
@@ -200,33 +108,7 @@ async function audit() {
 
 // ---------- wander ----------
 const sleepAnim = 150;
-async function nav(screen) {
-  const ids = { Home: 'FEmusic_home', Explore: 'FEmusic_explore', Library: 'FEmusic_library_landing' };
-  const endpoint = screen === 'Search' ? '{ searchEndpoint: { query: "lofi" } }' : `{ browseEndpoint: { browseId: ${JSON.stringify(ids[screen])} } }`;
-  await ev(`document.querySelector('ytmusic-app').dispatchEvent(new CustomEvent('yt-navigate', { bubbles: true, composed: true, detail: { endpoint: ${endpoint} } }))`);
-}
-async function cleanUp(W, H) {   // close menu / player, drop keyboard focus, so each cell starts from a known state
-  await ev('document.activeElement && document.activeElement.blur && document.activeElement.blur()');
-  for (let i = 0; i < 3; i++) {
-    const s = await ev(P('screen()'));
-    if (s === 'SongMenu') await tap(W / 2, 40);                       // scrim
-    else if (s === 'FullPlayer' || s === 'TabsPanel') await drag(W / 2, 90, W / 2, H * 0.8, 160);
-    else break;
-    await sleep(700);
-  }
-}
-async function ensurePlaying(W, H) {
-  const has = () => ev(`!!document.querySelector('ytmusic-player-bar') && !!document.querySelector('ytmusic-player-bar .title')?.textContent?.trim()`);
-  if (await has()) return true;
-  await nav('Home'); await sleep(2500);
-  const r = await ev(`(() => { const H = ${PAGE}; for (const e of document.querySelectorAll('ytmusic-two-row-item-renderer,ytmusic-responsive-list-item-renderer')) {
-      if (!H.shown(e)) continue; const r = e.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + Math.min(r.height / 2, 60);
-      if (!H.unsafe(x, y) && y > 120 && y < innerHeight - 140) return [x, y]; } return null; })()`);
-  if (!r) return false;
-  await tap(r[0], r[1]); await sleep(3500);
-  return has();
-}
-async function setup(screen, state, W, H) {
+export async function setup(screen, state, W, H) {
   await cleanUp(W, H);
   if (state === 'playing' || screen === 'FullPlayer' || screen === 'TabsPanel') if (!await ensurePlaying(W, H)) return false;
   if (LISTS.includes(screen)) {
@@ -234,7 +116,9 @@ async function setup(screen, state, W, H) {
     if (screen === 'Search' && !String(await ev('location.pathname')).startsWith('/search')) return false;
     await ev(`scrollTo(0, ${state === 'deep' ? 3500 : 0})`); if (state !== 'anim') await sleep(400);
   } else if (screen === 'FullPlayer' || screen === 'TabsPanel') {
-    const bar = await ev(`(() => { const r = document.querySelector('ytmusic-player-bar')?.getBoundingClientRect(); return r && [r.left + r.width / 3, r.top + r.height / 2]; })()`);
+    if (!String(await ev('location.pathname')).startsWith('/watch') && await ev(P('screen()')) === 'Search') { await nav('Home'); await sleep(1500); }   // the mini player is not tappable on the search page
+    for (let i = 0; i < 12 && await ev(`(document.querySelector('ytmusic-app-layout > ytmusic-player-bar')?.getBoundingClientRect().top ?? 0) < innerHeight * 0.5`) && await ev(P('screen()')) !== 'FullPlayer'; i++) await sleep(500);   // the bar settles at the bottom a moment after a navigation
+    const bar = await ev(`(() => { const r = document.querySelector('ytmusic-app-layout > ytmusic-player-bar')?.getBoundingClientRect(); return r && [r.left + r.width / 3, r.top + r.height / 2]; })()`);
     if (bar && await ev(P('screen()')) !== 'FullPlayer' && await ev(P('screen()')) !== 'TabsPanel') { await tap(bar[0], bar[1]); await sleep(state === 'anim' ? sleepAnim : 1200); }
     if (screen === 'TabsPanel') {
       const t = await ev(`(() => { const e = document.querySelector('ytmusic-player-page tp-yt-paper-tab'); const r = e && e.getBoundingClientRect(); return r && [r.left + r.width / 2, r.top + r.height / 2]; })()`);
@@ -355,6 +239,65 @@ function coverageMd() {   // generated summary, committed by the loop with an ac
   fs.writeFileSync(path.join(ROOT, 'docs', 'COVERAGE.md'), md);
 }
 
+// ---------- lenses (harvest rotates through these; each is a measurement, not an opinion) ----------
+const THUMB = ['.play-pause-button', '.next-button', '.previous-button', 'ytmusic-player-page tp-yt-paper-tab', 'ytmusic-search-box .search-button'];
+async function lensThumb(W, H) {   // primary actions should sit in the lower 55 % of the screen
+  const found = [];
+  for (const st of ['Home', 'FullPlayer', 'TabsPanel']) {
+    if (!await setup(st, 'playing', W, H)) continue;
+    for (const sel of THUMB) {
+      const y = await ev(`(() => { const H = ${PAGE}; const e = [...document.querySelectorAll(${JSON.stringify(sel)})].find(H.shown); const r = e && e.getBoundingClientRect(); return r ? Math.round(r.top + r.height / 2) : null; })()`);
+      if (y != null && y < H * 0.45) found.push({ screen: st, rule: 'thumb', sel, detail: `primary action ${sel} centre at y=${y} of ${H} css px: out of easy thumb reach` });
+    }
+  }
+  return found;
+}
+async function motionProbe(label, screen, trigger, getter) {   // count distinct positions the element passes through while it opens or closes
+  await ev(`window.__mp = []; (function f(t0) { const t = performance.now(); try { window.__mp.push(${getter}); } catch {} if (t - t0 < 700) requestAnimationFrame(() => f(t0)); })(performance.now())`);
+  await trigger(); await sleep(900);
+  const n = new Set((await ev('window.__mp') || []).map(v => Math.round(v / 4))).size;
+  return n < 4 ? [{ screen, rule: 'motion', sel: label, detail: `${label}: only ${n} distinct positions in 700 ms (jumps instead of animating)` }] : [];
+}
+async function lensMotion(W, H) {
+  const found = [];
+  if (await setup('Home', 'playing', W, H)) {
+    const bar = await ev(`(() => { const r = document.querySelector('ytmusic-app-layout > ytmusic-player-bar').getBoundingClientRect(); return [r.left + r.width / 3, r.top + r.height / 2]; })()`);
+    found.push(...await motionProbe('player-sheet-open', 'Home', () => tap(bar[0], bar[1]), `document.querySelector('ytmusic-player-page').getBoundingClientRect().top`));
+    found.push(...await motionProbe('player-sheet-close', 'FullPlayer', () => drag(W / 2, 90, W / 2, H * 0.8, 160), `document.querySelector('ytmusic-player-page').getBoundingClientRect().top`));
+  }
+  if (await setup('Library', 'idle', W, H)) {
+    const r = await ev(`(() => { const e = [...document.querySelectorAll('ytmusic-responsive-list-item-renderer,ytmusic-two-row-item-renderer')].find(e => { const r = e.getBoundingClientRect(); return r.top > 150 && r.bottom < innerHeight - 140; }); const r = e && e.getBoundingClientRect(); return r && [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+    if (r) found.push(...await motionProbe('song-menu-open', 'SongMenu', () => hold(r[0], r[1]), `document.querySelector('.taro-menu') ? document.querySelector('.taro-menu').getBoundingClientRect().top : innerHeight`));
+  }
+  return found;
+}
+const LONG = 'Ünïcödé 한국어 제목이 아주 긴 노래 제목입니다 (feat. Some Very Long Featured Artist Name & Another One) [Extended Remix 2026]';
+async function lensEdge(W, H) {
+  const found = [];
+  if (await setup('Home', 'idle', W, H)) {
+    const r = JSON.parse(await ev(`(() => { const H = ${PAGE}; const e = [...document.querySelectorAll('ytmusic-responsive-list-item-renderer .title, ytmusic-two-row-item-renderer .title')].find(H.shown); if (!e) return 'null';
+      e.textContent = ${JSON.stringify(LONG)}; const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+      return JSON.stringify({ right: Math.round(r.right), clip: e.scrollWidth > e.clientWidth + 2 && s.textOverflow !== 'ellipsis' && s.webkitLineClamp === 'none' }); })()`) || 'null');
+    if (r && (r.right > W || r.clip)) found.push({ screen: 'Home', rule: 'edge', sel: 'long-title', detail: `a 60-char mixed Korean/English title overflows (right edge ${r.right} of ${W}, clipped without ellipsis: ${r.clip})` });
+  }
+  try {   // slow 3G: the page must show something (content or a spinner), never a blank screen
+    await send('Network.enable');
+    await send('Network.emulateNetworkConditions', { offline: false, latency: 600, downloadThroughput: 50 * 1024, uploadThroughput: 20 * 1024 });
+    await nav('Library'); await sleep(3500);
+    const blank = await ev(`document.body.innerText.trim().length < 20 && !document.querySelector('tp-yt-paper-spinner,paper-spinner-lite,ytmusic-section-list-renderer')`);
+    if (blank) found.push({ screen: 'Library', rule: 'edge', sel: 'blank-on-slow-network', detail: 'Library shows no content and no spinner 3.5 s into a slow 3G load' });
+  } finally { await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }).catch(() => {}); }
+  await nav('Home'); await sleep(1500);
+  return found;
+}
+async function lens(name) {
+  const [W, H] = JSON.parse(await ev('JSON.stringify([innerWidth, innerHeight])'));
+  try {
+    const found = await ({ thumb: lensThumb, motion: lensMotion, edge: lensEdge }[name])(W, H);
+    return addFindings(found.map(f => ({ ...f, key: keyOf(f.rule, f.screen, f.sel) })));
+  } finally { await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }).catch(() => {}); await cleanUp(W, H).catch(() => {}); await nav('Home').catch(() => {}); }
+}
+
 // ---------- main ----------
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
@@ -364,11 +307,12 @@ async function main() {
     else if (args[i] === '--cell') opt.cell = args[++i]; else if (args[i] === '--chaos') opt.chaos = true;
   }
   if (cmd === 'coverage-md') return coverageMd();   // no phone needed
-  if (!['audit', 'wander'].includes(cmd)) { console.log('usage: oracle.mjs audit | wander [--cells N] [--cell "Screen|State|Gesture"] [--reps K] [--chaos]'); process.exit(2); }
+  if (!['audit', 'wander', 'lens'].includes(cmd)) { console.log('usage: oracle.mjs audit | wander [--cells N] [--cell "Screen|State|Gesture"] [--reps K] [--chaos] | lens thumb|motion|edge'); process.exit(2); }
   preflight(); await connect();
   let all;
   try {
     if (cmd === 'audit') all = addFindings((await audit()));
+    else if (cmd === 'lens') all = await lens(args[0]);
     else all = await wander(opt);
   } finally { try { adb('forward', '--remove-all'); } catch {} }
   console.log(`FINDINGS ${all.length} (in tool/.findings.json; ticket key goes in [F:key])`);

@@ -50,7 +50,7 @@ function Get-Frame {   # about 10 lines, no model calls
         $l += "iteration $($s.iter)   mode $($s.mode)   stale harvests in a row $($s.stale)   failures $($s.fails)   cost `$$([Math]::Round([double]$s.cost, 2))   unfinished edits: $(if ($s.wip) { 'yes' } else { 'no' })"
         $l += "last: $($s.result)"
     }
-    $l += "devices attached: $n   backlog open: $todo"
+    $l += "devices attached: $n   backlog open: $todo   wishes open: $([int]$s.wishes)   builds: $([int]$s.builds)"
     $l += (git log -3 --format='  %h %s' | ForEach-Object { $_ })
     $l += 'live:'
     $l += @(Get-Content "$T/agent.log" -Tail 6 -ErrorAction SilentlyContinue | ForEach-Object { '  ' + $_ })
