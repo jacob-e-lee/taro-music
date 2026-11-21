@@ -1,7 +1,7 @@
 # Pre-commit check for the agent. Run with the change still uncommitted.
 #   exit 0  pass            exit 1  fail (last line says why: revert the change)
 #   exit 2  code changed but no device attached: do not push code (docs-only changes are fine)
-# Target an emulator with $env:ANDROID_SERIAL (adb honours it).
+# Always the real phone: adb honours $env:ANDROID_SERIAL (set by agent-loop.ps1).
 $root = Split-Path $PSScriptRoot
 Set-Location $root
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"

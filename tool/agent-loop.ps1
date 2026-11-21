@@ -13,6 +13,9 @@ $MinGapSec = 20   # keeps an idle agent from spinning on tokens
 Add-Type -Namespace W -Name P -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);'
 [void][W.P]::SetThreadExecutionState(0x80000001)
 
+# Real phone only (no emulators): every adb call in every child script targets it.
+$env:ANDROID_SERIAL = "RFGL34ZRQ2H"
+
 $S = [ordered]@{ loopPid = $PID; claudePid = 0; phase = 'starting'; iter = 0; item = ''; result = ''; fails = 0; cost = 0.0; until = ''; wip = $false; limitHits = 0 }
 try {
     $old = Get-Content $stateFile -Raw -ErrorAction Stop | ConvertFrom-Json
