@@ -27,7 +27,7 @@ for (let i = 0; i < 20 && !up; i++) {
 }
 if (!up) out({ ok: false, why: '__taroYtm not set / page not loaded' }, 1);
 
-// 1.5 s of frame timing on the idle page (informational; the agent measures its own interaction separately)
+// 1.5 s of frame timing on the idle page (informational)
 const frames = await Promise.race([
   ev(`new Promise(res => { let n = 0, max = 0, last = performance.now(), lt = 0; const s = last;
     try { new PerformanceObserver(l => lt += l.getEntries().length).observe({ entryTypes: ['longtask'] }); } catch (e) {}
