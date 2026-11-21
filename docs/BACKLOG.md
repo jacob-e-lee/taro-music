@@ -3,6 +3,7 @@
 One line per item. `- [ ]` open. The agent adds findings here and moves finished items to docs/DONE.md.
 
 ## Open
+- [ ] [M:hygiene-397] Code | prune dead CSS/JS in inject.js, split any file over ~600 lines, merge duplicate platform-channel calls | expected: same behaviour, smaller code, gate passes | actual: nothing pruned in the last 10 iterations
 - [ ] [F:bottom-inset:Home:a.yt-simple-endpoint.anchor-link] Home | a.yt-simple-endpoint.anchor-link | expected: tappable area ends above the navigation bar zone (BOT) | actual: audit measured it crossing the navigation bar zone
 - [ ] [F:thumb:TabsPanel:.play-pause-button] TabsPanel | tap play/pause in mini bar with up-next panel open | expected: play/pause reachable in lower thumb zone (y > ~50% of 780 css px) | actual: .play-pause-button centre at y=71 of 780 css px, out of easy thumb reach
 - [ ] [F:thumb:TabsPanel:.next-button] TabsPanel | tap next in mini bar with up-next panel open | expected: next reachable in lower thumb zone | actual: .next-button centre at y=71 of 780 css px, out of easy thumb reach
