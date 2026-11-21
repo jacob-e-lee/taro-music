@@ -3,7 +3,6 @@
 One line per item. `- [ ]` open. The agent adds findings here and moves finished items to docs/DONE.md.
 
 ## Open
-- [ ] [F:small:Home:a.yt-simple-endpoint.ytmusic-logo] Home | a.yt-simple-endpoint.ytmusic-logo at 16,51 (header logo) | expected: touch target at least 44x44 css px | actual: audit measured 71x24 css px
 - [ ] [F:small:Home:button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextText] Home | button.ytSpecButtonShapeNextText at 308,226 | expected: touch target at least 44x44 css px | actual: audit measured 36x36 css px
 - [ ] [F:small:Home:button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextOutline] Home | button.ytSpecButtonShapeNextOutline at 225,180 | expected: touch target at least 44x44 css px (or padded hit area) | actual: audit measured 55x24 css px
 - [ ] [F:small:Home:a.yt-simple-endpoint.yt-formatted-string] Home | a.yt-simple-endpoint.yt-formatted-string at 80,226 | expected: touch target at least 44 css px tall (or padded hit area) | actual: audit measured 185x17 css px
