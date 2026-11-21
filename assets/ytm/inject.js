@@ -183,6 +183,11 @@
     'ytmusic-player-page[player-page-ui-state=FULL_PLAYER_VIEW] #side-panel > #tab-renderer { transition: none !important; }',
     // The full player's controls stay hidden in the tabs view. Not !important: YouTube fades them inline while dragging.
     'ytmusic-player-page[player-page-ui-state=TABS_VIEW] #main-panel > :not(#music-player-wrapper) { opacity: 0; }',
+    // With the tabs panel open, the whole background behind it is the mini player's grey-black. fitTabs cross-fades
+    // #taro-band over the full player's backdrop with the drag, evenly, so no edge or fade from the top shows.
+    'ytmusic-player-bar#top-player-bar { background: none !important; }',
+    '#taro-band { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; opacity: 0; background: rgb(3,3,3); will-change: opacity;' +
+      ' transition: opacity var(--ytmusic-player-page-transition-ms, 300ms) cubic-bezier(.2,0,.6,1); }',
     '#player-page > .content { padding-top: ' + TOP + ' !important; }',
     // ...while its blurred background and darkening gradient start at the very top, under the status bar.
     '#player-page :is(.background-image, .background-gradient) { top: 0 !important; }',
@@ -908,6 +913,16 @@
     var pp = document.querySelector('ytmusic-player-page'), c = pp && pp.polymerController;
     if (!c || c.__taro || !c.applyTransformStyles || !c.setPlayerPosition) return;
     c.__taro = true;
+    // The black over the full player's backdrop (0 full player .. 1 tabs open); the bar's content stays above it.
+    var band = document.createElement('div');
+    band.id = 'taro-band';
+    var bg = pp.querySelector('.background-gradient');
+    if (!bg) return;
+    bg.after(band);
+    var shade = function (a, drag) {
+      band.style.transition = drag ? 'none' : '';
+      band.style.opacity = a;
+    };
     var fit = function () {
       var mp = pp.querySelector('#main-panel'), pl = pp.querySelector('#player');
       if (!mp || !pl) return;
@@ -924,12 +939,18 @@
       fit();
       return setPos.call(this, s);
     };
+    // The state flips as a drag releases: the band follows it, fading with the panel.
+    new MutationObserver(function () {
+      var open = pp.getAttribute('player-page-ui-state') === 'TABS_VIEW';
+      shade(open ? 1 : 0, false);
+    }).observe(pp, { attributes: true, attributeFilter: ['player-page-ui-state'] });
     c.applyTransformStyles = function (dy) {
       fit();
       apply.call(this, dy);
       // YouTube offsets the panel from the window height; redo it so it starts where it rests and follows the finger.
       var d = this.moveableDistance, a = Math.min(Math.abs(dy), d) / d, sp = pp.querySelector('#side-panel');
       if (this.playerPageUiState !== 'FULL_PLAYER_VIEW') a = 1 - a;
+      shade(a, true);
       if (sp) {
         sp.style.transform = 'translate(0, ' + d * (1 - a) + 'px)';
         // YouTube's two panel colours (full view, open), blended with the drag instead of switching at the flip.
