@@ -2,3 +2,4 @@
 - Accessibility: aria-label on menu header like/close buttons (tab bar already has text labels)
 - Header search/settings icons: hit area grown to 48 dp (::after). Chips (36 px) and inline text links left as YouTube draws them.
 - Offline page instead of Chromium error page (YtmWebView.onReceivedError)
+- Selector check: 15 s after load inject.js warns once in logcat (TaroMusic) if core YouTube elements are missing.

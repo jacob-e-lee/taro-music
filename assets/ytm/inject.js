@@ -399,6 +399,12 @@
       if (promo && promo.closest('tp-yt-paper-dialog').opened) promo.closest('tp-yt-paper-dialog').close();
     }, 300);
   }
+  // One-off check 15 s after load: warn (logcat TaroMusic) if a selector we rely on is gone.
+  setTimeout(function () {
+    var gone = ['ytmusic-app', 'ytmusic-app-layout', 'ytmusic-player-bar', 'ytmusic-search-box', 'ytmusic-popup-container', 'ytmusic-player-page']
+      .filter(function (s) { return !document.querySelector(s); });
+    if (gone.length) console.warn('TARO selectors missing: ' + gone.join(', '));
+  }, 15000);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildNav);
   else buildNav();
 
