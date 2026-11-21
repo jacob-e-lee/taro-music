@@ -162,6 +162,9 @@
     // variable, and the bar's background extends up behind the status bar.
     'html { --ytmusic-nav-bar-height: calc(48px + ' + TOP + ') !important; }',
     'ytmusic-nav-bar { top: ' + TOP + ' !important; height: 48px !important; }',
+    // The header icons are 26-32px: a pseudo-element grows each hit area to 48px.
+    'ytmusic-nav-bar :is(.search-button, ytmusic-settings-button yt-icon-button) { position: relative; overflow: visible !important; }',
+    'ytmusic-nav-bar :is(.search-button, ytmusic-settings-button yt-icon-button)::after { content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); }',
     // The full player keeps its content below the status bar too. Its layout is sized from
     // --ytmusic-player-page-inner-height (YouTube sets it to the window height). The tabs view keeps
     // the same size, so the art doesn't jump when the state flips (fitTabs corrects YouTube's math).

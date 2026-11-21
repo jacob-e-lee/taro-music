@@ -1,2 +1,3 @@
 - Reviewed layout sizes: all CSS px (dp-scaled), viewport values come from visualViewport/safe-area insets; no change needed. Untestable risk: fixed 48px nav bar under large system font scale.
 - Accessibility: aria-label on menu header like/close buttons (tab bar already has text labels)
+- Header search/settings icons: hit area grown to 48 dp (::after). Chips (36 px) and inline text links left as YouTube draws them.
