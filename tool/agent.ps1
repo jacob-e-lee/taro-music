@@ -29,11 +29,13 @@ function Stop-Agent {
     Write-Host 'Agent stopped. SAFE TO UNPLUG.' -ForegroundColor Green
 }
 
-function Start-Agent {
+function Start-Agent {   # loop runs hidden; this window is the dashboard (x stops it)
     if (-not (Test-Running)) {
         Remove-Item $stop -ErrorAction SilentlyContinue
-        Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSScriptRoot/agent-loop.ps1`""   # visible window: the agent runs in it, closing it stops it
-    } else { Write-Host 'already running' }
+        Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ($PSScriptRoot + '/agent-loop.ps1')
+        Start-Sleep 2
+    }
+    Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ($PSCommandPath), 'view'
 }
 
 function Get-Frame {   # about 10 lines, no model calls
@@ -50,6 +52,8 @@ function Get-Frame {   # about 10 lines, no model calls
     }
     $l += "devices attached: $n   backlog open: $todo"
     $l += (git log -3 --format='  %h %s' | ForEach-Object { $_ })
+    $l += 'live:'
+    $l += @(Get-Content "$T/agent.log" -Tail 6 -ErrorAction SilentlyContinue | ForEach-Object { '  ' + $_ })
     $l
 }
 
@@ -59,7 +63,7 @@ function Show-View {
         $f = Get-Frame
         Clear-Host
         $f | Write-Host
-        Write-Host "`n[q] close view   [x] stop agent   [s] start agent" -ForegroundColor DarkGray
+        Write-Host "`n[q] close this window (agent keeps running)   [x] stop agent   [s] start agent" -ForegroundColor DarkGray
         for ($i = 0; $i -lt 10; $i++) {
             try {
                 if ([Console]::KeyAvailable) {
