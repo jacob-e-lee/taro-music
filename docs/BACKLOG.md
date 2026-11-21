@@ -7,6 +7,9 @@ One line per item. `- [ ]` open. The agent adds findings here and moves finished
 - [ ] [F:small:Home:a.yt-simple-endpoint.yt-formatted-string] Home | a.yt-simple-endpoint.yt-formatted-string at 80,226 | expected: touch target at least 44 css px tall (or padded hit area) | actual: audit measured 185x17 css px
 - [ ] [F:bottom-inset:Home:ytmusic-two-row-item-renderer.ytmusic-carousel] Home | ytmusic-two-row-item-renderer.ytmusic-carousel | expected: tappable area ends above the navigation bar zone (BOT) | actual: audit measured it crossing the navigation bar zone
 - [ ] [F:bottom-inset:Home:a.yt-simple-endpoint.anchor-link] Home | a.yt-simple-endpoint.anchor-link | expected: tappable area ends above the navigation bar zone (BOT) | actual: audit measured it crossing the navigation bar zone
+- [ ] [F:thumb:TabsPanel:.play-pause-button] TabsPanel | tap play/pause in mini bar with up-next panel open | expected: play/pause reachable in lower thumb zone (y > ~50% of 780 css px) | actual: .play-pause-button centre at y=71 of 780 css px, out of easy thumb reach
+- [ ] [F:thumb:TabsPanel:.next-button] TabsPanel | tap next in mini bar with up-next panel open | expected: next reachable in lower thumb zone | actual: .next-button centre at y=71 of 780 css px, out of easy thumb reach
+- [ ] [F:thumb:TabsPanel:ytmusic-player-page_tp-yt-paper-tab] TabsPanel | tap Up next / Lyrics / Related tabs | expected: tab switcher within thumb reach | actual: tp-yt-paper-tab centre at y=143 of 780 css px, out of easy thumb reach
 
 ## Rejected
 - [F:small:Home:button.ytSpecButtonShapeNextHost.ytSpecButtonShapeNextText] stale: inject.js:171 already sets 44px min size; audit no longer reports it
