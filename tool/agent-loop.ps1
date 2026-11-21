@@ -186,6 +186,7 @@ while (-not (Stopped)) {
     $top = if ($open.Count) { [string]$open[0] } else { '' }
     if ($mode -eq 'harvest' -and $S.stale -ge 6) { Wait-For $(if ($S.stale -ge 8) { 3600 } else { 1800 }) 'waiting-nothing-new'; if (Stopped) { break } }
     $S.iter++; $S.mode = $mode; $S.open = $open.Count; $S.phase = $mode; $S.item = $top; Save
+    Say "iter $($S.iter) start: $mode (stale $($S.stale), open $($open.Count))$(if ($top) { " | " + $top.Substring(0, [Math]::Min(90, $top.Length)) })"
     $head0 = (git rev-parse HEAD)
     if ($mode -eq 'harvest') {
         $S.harvests++
