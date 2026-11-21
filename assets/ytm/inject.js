@@ -404,11 +404,15 @@
   // into a sheet under a bar with the song, its artist, a like button and a close button. Dragging
   // the sheet down, tapping the dimmed page or the close button slides it away.
   var ROW = 'ytmusic-responsive-list-item-renderer, ytmusic-two-row-item-renderer, ytmusic-player-queue-item, ytmusic-player-bar';
-  var menuRow = null, scrim = null, sheet = null;  // the row that opened the menu; the dimmer; the open dropdown
-  // The menu doesn't say which song it is for; remember the last row touched (3-dots or long press).
+  var menuRow = null, scrim = null, sheet = null;  // the title and artist of the row that opened the menu; the dimmer; the open dropdown
+  // The menu doesn't say which song it is for; remember the last touch (3-dots or long press). Read the
+  // text now: the row can be re-rendered or recycled before the menu opens, and a touch that isn't on a
+  // row (a page header's menu) must not leave the previous song's name behind.
   document.addEventListener('pointerdown', function (e) {
     var r = e.target.closest && e.target.closest(ROW);
-    if (r) menuRow = r;
+    var q = function (s) { var x = r && r.querySelector(s); return x ? x.textContent.trim().replace(/\s+/g, ' ') : ''; };
+    if (e.target.closest && e.target.closest('ytmusic-menu-popup-renderer')) return;  // a tap inside the open menu
+    menuRow = r && { title: q('.title'), artist: q('.secondary-flex-columns > *').split(' • ')[0] || q('.subtitle') || q('.byline') };
   }, true);
   // Touch feedback. A finger that lands on something marks it pressed until it lifts, moves off or the
   // browser takes the touch over to scroll (pointercancel), so a press that turns into a drag still shows.
@@ -535,10 +539,9 @@
   function setLike(b, on) { b.firstChild.firstChild.setAttribute('d', on ? HEART_ON : HEART); }
   function fillHead(m) {
     var h = m.querySelector('#taro-mh') || menuHead(m);
-    var r = menuRow, q = function (s) { var e = r && r.querySelector(s); return e ? e.textContent.trim().replace(/\s+/g, ' ') : ''; };
     var spans = h.querySelectorAll('span');
-    spans[0].textContent = q('.title');
-    spans[1].textContent = q('.secondary-flex-columns > *').split(' • ')[0] || q('.subtitle') || q('.byline');
+    spans[0].textContent = menuRow ? menuRow.title : '';
+    spans[1].textContent = menuRow ? menuRow.artist : '';
     var item = likeItem(m), like = h.querySelector('button');
     if (item) {
       item.classList.add('taro-liked-item');
