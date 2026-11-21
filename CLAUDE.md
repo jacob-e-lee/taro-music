@@ -104,6 +104,10 @@ Then connect to `ws://localhost:9222/devtools/browser` (Node 22 has a global `We
 - **Keep idle cost near zero:** no timers that search the whole page (~13k elements) or walk the DOM; check a known element instead (e.g. `#movie_player`'s classes for ads). No `body:has(...)` rules: they make every DOM change re-check styles; mirror state onto `<html>` classes instead (`taro-open`, `taro-playing`).
 - **Don't disable YouTube's IntersectionObservers.** Seven `rootMargin: -0.1px` observers (~3.6k targets) cost ~180 ms per tab switch, but they're YouTube's general visibility service, which any feature may rely on; switching them off was tested and rejected.
 
+## Agent loop (autonomous improvement)
+
+`agent` (repo root `agent.cmd`) starts it and opens a status window; `agent off` stops it in ~3 s and prints SAFE TO UNPLUG; `agent toggle`, `agent status`. `tool/agent-loop.ps1` runs one fresh `claude -p` per iteration with `tool/agent-prompt.md` (never asks a human; the prompt holds the rules). It waits out token limits (sleeps to the reset time, one haiku probe, resumes) and unplugged phones (`waiting-for-phone`, resumes on replug). `tool/human.ps1` drives sloppy human touches, `tool/gate.ps1` must pass before any push (exit 1 revert, exit 2 no device: docs only), `tool/probe.mjs` checks the live page. Work list: `docs/BACKLOG.md` (finished items go to `docs/DONE.md`). Generated and git-ignored: `tool/state.json`, `tool/agent.log`, `tool/STOP`. Test the loop without spending tokens by pointing `AGENT_CLAUDE` at a stub.
+
 ## Gotchas
 
 - Git Bash rewrites `/sdcard/...` arguments into Windows paths. Prefix adb commands with `MSYS_NO_PATHCONV=1`.

@@ -49,3 +49,12 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Agent loop (generated)
+tool/state.json
+tool/agent.log
+tool/STOP
+tool/.prompt.tmp
+tool/.out.json
+tool/.err.txt
+tool/.gestures.txt
