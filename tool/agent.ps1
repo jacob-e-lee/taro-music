@@ -47,7 +47,7 @@ function Get-Frame {   # about 10 lines, no model calls
     $l = @("taro agent: $phase")
     if ($s) {
         if ($s.until) { $left = [DateTime]::Parse($s.until) - (Get-Date); if ($left.TotalSeconds -gt 0) { $l[0] += ('  (resumes in {0:hh\:mm\:ss}, at {1:HH:mm})' -f $left, [DateTime]::Parse($s.until)) } }
-        $l += "iteration $($s.iter)   failures in a row $($s.fails)   cost `$$([Math]::Round([double]$s.cost, 2))   unfinished edits: $(if ($s.wip) { 'yes' } else { 'no' })"
+        $l += "iteration $($s.iter)   mode $($s.mode)   stale harvests in a row $($s.stale)   failures $($s.fails)   cost `$$([Math]::Round([double]$s.cost, 2))   unfinished edits: $(if ($s.wip) { 'yes' } else { 'no' })"
         $l += "last: $($s.result)"
     }
     $l += "devices attached: $n   backlog open: $todo"

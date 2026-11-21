@@ -7,20 +7,20 @@ $stop = "$T\STOP"; $stateFile = "$T\state.json"; $log = "$T\agent.log"
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 $claude = if ($env:AGENT_CLAUDE) { $env:AGENT_CLAUDE } else { (Get-Command claude -ErrorAction SilentlyContinue).Source }
 $IterTimeoutMin = 30
-$MinGapSec = 20   # keeps an idle agent from spinning on tokens
+$MinGapSec = if ($env:AGENT_TEST) { 1 } else { 20 }   # keeps an idle agent from spinning on tokens
 
 # Stop Windows idle-sleeping while the loop runs; released automatically when this process ends.
 Add-Type -Namespace W -Name P -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);'
-[void][W.P]::SetThreadExecutionState(0x80000001)
+[void][W.P]::SetThreadExecutionState([uint32]2147483649)
 
 # Real phone only (no emulators): every adb call in every child script targets it.
 $env:ANDROID_SERIAL = "RFGL34ZRQ2H"
 
-$S = [ordered]@{ loopPid = $PID; claudePid = 0; phase = 'starting'; iter = 0; item = ''; result = ''; fails = 0; cost = 0.0; until = ''; wip = $false; limitHits = 0 }
+$S = [ordered]@{ loopPid = $PID; claudePid = 0; phase = 'starting'; iter = 0; item = ''; result = ''; fails = 0; cost = 0.0; until = ''; wip = $false; limitHits = 0; mode = ''; stale = 0; harvests = 0; open = 0 }
 try {
     $old = Get-Content $stateFile -Raw -ErrorAction Stop | ConvertFrom-Json
     if ($old.loopPid -ne $PID -and $old.phase -ne 'off' -and (Get-Process -Id $old.loopPid -ErrorAction SilentlyContinue)) { exit }  # already running
-    $S.iter = [int]$old.iter; $S.cost = [double]$old.cost
+    $S.iter = [int]$old.iter; $S.cost = [double]$old.cost; $S.stale = [int]$old.stale; $S.harvests = [int]$old.harvests
 } catch {}
 
 function Save { try { [IO.File]::WriteAllText($stateFile, ($S | ConvertTo-Json)) } catch {} }
@@ -111,25 +111,107 @@ function Wait-Limit($r) {
 Remove-Item $stop -ErrorAction SilentlyContinue
 if (-not $claude) { $S.phase = 'off'; $S.result = 'claude not found'; Save; exit 1 }
 
+# ---- harvest / build modes: the loop, not the model, decides whether a run counted ----
+$Allowed = 'docs/BACKLOG.md', 'docs/COVERAGE.md'
+$attempts = @{}
+function Open-Lines { if (Test-Path docs\BACKLOG.md) { @(Get-Content docs\BACKLOG.md | Where-Object { $_ -match '^- \[ \] ' }) } else { @() } }
+function Dirty { @(git status --porcelain | Where-Object { $_ }) }
+
+# Harvest must not touch anything: put every changed file back (BACKLOG is handled by Finish-Harvest).
+function Revert-All($keep) {
+    foreach ($l in Dirty) {
+        $p = $l.Substring(3).Trim('"')
+        if ($keep -and $Allowed -contains $p) { continue }
+        if ($l.StartsWith('??')) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue } else { git checkout HEAD -- $p }
+    }
+}
+
+function Finish-Harvest($before) {
+    Revert-All $true
+    $keys = @{}
+    try { (Get-Content "$T\.findings.json" -Raw -ErrorAction Stop | ConvertFrom-Json) | ForEach-Object { $keys[$_.key] = 1 } } catch {}
+    $valid = 0; $manual = 0; $seen = @{}
+    foreach ($n in @(Open-Lines | Where-Object { $before -notcontains $_ })) {
+        if ($n -match '^- \[ \] \[(F|M):([^\]]+)\] .+\|.+\|.+\|.+') {
+            $kind = $Matches[1]; $k = $Matches[2]
+            if ($seen[$k]) { continue }
+            $seen[$k] = 1
+            if ($kind -eq 'F' -and $keys.ContainsKey($k)) { $valid++ }
+            elseif ($kind -eq 'M' -and $manual -lt 1) { $manual++; $valid++ }
+        }
+    }
+    if ($valid -ge 2) {
+        node "$T\oracle.mjs" coverage-md
+        git add docs/BACKLOG.md docs/COVERAGE.md
+        git commit -q -m "docs: Harvest $valid measured tickets"
+        git pull --rebase -q; git push -q origin main
+        $S.stale = 0; $S.result = "harvest accepted: $valid tickets"
+    } else {
+        git checkout HEAD -- docs/BACKLOG.md
+        Remove-Item docs\COVERAGE.md -ErrorAction SilentlyContinue
+        $S.stale++; $S.result = "harvest rejected ($valid valid tickets), stale $($S.stale)"
+    }
+    Say $S.result
+}
+
+function Finish-Build($head0, $top) {
+    if ($top -and (Open-Lines) -notcontains $top) { $attempts.Remove($top); return }   # fixed, or rejected with a reason by the agent
+    $head1 = (git rev-parse HEAD)
+    $files = if ($head1 -ne $head0) { @(git diff --name-only $head0 $head1) } else { @() }
+    if (@($files | Where-Object { $_ -notmatch '^docs/' -and $_ -notmatch '\.md$' }).Count) { $attempts.Remove($top); return }
+    if (-not $top) { return }
+    $attempts[$top] = 1 + [int]$attempts[$top]
+    Say "build made no code change for: $top (attempt $($attempts[$top]))"
+    if ($attempts[$top] -ge 2) {
+        $tag = if ($top -match '\[(?:F|M):[^\]]+\]') { $Matches[0] } else { '[M:unknown]' }
+        $lines = @(Get-Content docs\BACKLOG.md | Where-Object { $_ -ne $top })
+        $i = [Array]::IndexOf($lines, '## Rejected')
+        if ($i -ge 0) { $lines = $lines[0..$i] + "- $tag 2 build attempts, no code change" + $(if ($i + 1 -lt $lines.Count) { $lines[($i + 1)..($lines.Count - 1)] } else { @() }) }
+        [IO.File]::WriteAllLines("$PWD\docs\BACKLOG.md", $lines)
+        git add docs/BACKLOG.md; git commit -q -m "docs: Reject ticket after 2 build attempts without a code change"
+        git pull --rebase -q; git push -q origin main
+        $attempts.Remove($top)
+    }
+}
+
+$ran = 0
 while (-not (Stopped)) {
+    if ($env:AGENT_TEST_ITERS -and $ran++ -ge [int]$env:AGENT_TEST_ITERS) { break }   # test hook
     $t0 = Get-Date
-    $phone = [bool](Devices)
-    $S.iter++; $S.phase = 'working'; $S.item = ''; Save
-    $head = "PHONE: $(if ($phone) { 'attached' } else { 'absent' })`nITER: $($S.iter)`n"
-    $r = Run-Claude ($head + (Get-Content "$T\agent-prompt.md" -Raw)) 80 $env:AGENT_MODEL
+    if (-not $env:AGENT_TEST -and -not (Devices)) { Wait-Phone; if (Stopped) { break } }   # both modes need the phone (AGENT_TEST: stub runs)
+    $dirty = (Dirty).Count -gt 0
+    if (-not $dirty) { git pull --rebase -q }
+    $open = Open-Lines
+    $mode = if ($dirty -or $open.Count -ge 5) { 'build' } else { 'harvest' }
+    $top = if ($open.Count) { [string]$open[0] } else { '' }
+    if ($mode -eq 'harvest' -and $S.stale -ge 6) { Wait-For $(if ($S.stale -ge 8) { 3600 } else { 1800 }) 'waiting-nothing-new'; if (Stopped) { break } }
+    $S.iter++; $S.mode = $mode; $S.open = $open.Count; $S.phase = $mode; $S.item = $top; Save
+    $head0 = (git rev-parse HEAD)
+    if ($mode -eq 'harvest') {
+        $S.harvests++
+        Remove-Item "$T\.findings.json" -ErrorAction SilentlyContinue
+        $chaos = ($S.stale -ge 2) -or ($S.harvests % 5 -eq 0)
+        $head = "ITER: $($S.iter)`nSTALE: $($S.stale)`nCHAOS: $(if ($chaos) { 'yes: add --cells 5 --chaos to the wander' } else { 'no' })`n"
+        $r = Run-Claude ($head + (Get-Content "$T\harvest-prompt.md" -Raw)) 40 $env:AGENT_HARVEST_MODEL
+    } else {
+        $model = if ($env:AGENT_BUILD_MODEL) { $env:AGENT_BUILD_MODEL } elseif ($attempts[$top]) { $env:AGENT_HARVEST_MODEL } else { 'sonnet' }
+        $head = "ITER: $($S.iter)`nTOP TICKET: $top`n"
+        $r = Run-Claude ($head + (Get-Content "$T\build-prompt.md" -Raw)) 80 $model
+    }
     if ($r.stopped) { break }
-    $S.wip = [bool](git status --porcelain)
+    $c = if ($r.unplugged -or $r.timeout) { 'abort' } else { Classify $r }
+    if ($mode -eq 'harvest' -and $c -ne 'ok') { Revert-All $false }
+    $S.wip = (Dirty).Count -gt 0
     if ($r.unplugged) { $S.result = 'phone unplugged mid-iteration'; Say $S.result; Wait-Phone; continue }
     if ($r.timeout) { $S.fails++; $S.result = 'iteration timed out'; Say $S.result; Wait-For 60 'backoff'; continue }
-    $c = Classify $r
     switch ($c) {
         'ok' {
             $S.fails = 0
-            if ($r.json.total_cost_usd) { $S.cost += [double]$r.json.total_cost_usd }
+            $cost = if ($r.json.total_cost_usd) { [double]$r.json.total_cost_usd } else { 0 }
+            $S.cost += $cost
             $res = ([string]$r.json.result).Trim()
-            $S.result = if ($res.Length -gt 140) { $res.Substring(0, 140) } else { $res }
-            Say "iter $($S.iter) ok: $($S.result)"
-            if ($res -match 'NOOP_NO_PHONE') { Wait-Phone }
+            if ($mode -eq 'harvest') { Finish-Harvest $open } else { Finish-Build $head0 $top; $S.result = if ($res.Length -gt 140) { $res.Substring(0, 140) } else { $res } }
+            Say "iter $($S.iter) $mode ok (`$$([Math]::Round($cost, 2))): $($S.result)"
         }
         'limit' { Say 'limit hit'; Save; Wait-Limit $r }
         'net' { $S.fails++; $S.result = 'network down'; Say $S.result; Wait-For ([Math]::Min(60 * $S.fails, 600)) 'waiting-for-network' }

@@ -58,3 +58,6 @@ tool/.prompt.tmp
 tool/.out.json
 tool/.err.txt
 tool/.gestures.txt
+tool/.findings.json
+tool/coverage.json
+tool/.gestures.json
