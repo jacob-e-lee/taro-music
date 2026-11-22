@@ -43,6 +43,8 @@ class YtmWebView(context: Context) : WebView(context) {
     init {
         // Lets edge://inspect / brave://inspect attach to this WebView over USB.
         WebView.setWebContentsDebuggingEnabled(debuggable)
+        // No stretch overscroll: it deforms the whole view, including the fixed header, tab bar and miniplayer.
+        overScrollMode = OVER_SCROLL_NEVER
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
