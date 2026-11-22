@@ -1,0 +1,13 @@
+Taro Music turns the YouTube Music website into a proper mobile app.
+
+<ul>
+<li>No ads</li>
+<li>Plays in the background</li>
+<li>Lock screen and notification controls</li>
+<li>Mobile-friendly UI: swipe gestures, pull down to refresh, bottom navigation bar</li>
+<li>Full screen, drawing behind the status and navigation bars</li>
+</ul>
+
+It wraps music.youtube.com in a WebView and injects JavaScript to block ads and adapt the page for mobile. You sign in with your own account.
+
+Taro Music is an unofficial app and is not made by, or affiliated with, Google or YouTube. If YouTube redesigns the site, some gestures or the tab bar may break until the app is updated.
