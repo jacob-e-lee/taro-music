@@ -163,10 +163,9 @@
     'html { --ytmusic-nav-bar-height: calc(48px + ' + TOP + ') !important; }',
     'ytmusic-nav-bar { top: ' + TOP + ' !important; height: 48px !important; }',
     // The header icons are 26-32px: a pseudo-element grows each hit area to 48px.
-    'ytmusic-nav-bar :is(.search-button, ytmusic-settings-button yt-icon-button) { position: relative; overflow: visible !important; }',
-    'ytmusic-nav-bar :is(.search-button, ytmusic-settings-button yt-icon-button)::after { content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); }',
+    'ytmusic-nav-bar .search-button { position: relative; overflow: visible !important; }',
+    'ytmusic-nav-bar .search-button::after { content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); }',
     'ytmusic-nav-bar ytmusic-search-box yt-icon-button.search-button { transform: translateX(-2px); }',
-    'ytmusic-nav-bar :is(ytmusic-settings-button, ytmusic-search-box) yt-icon-button > button#button { width: 44px !important; height: 44px !important; padding: 0 !important; display: flex; align-items: center; justify-content: center; }',
     // Icon / text buttons YouTube draws at 36px: grow them to a 44px touch target.
     'button.ytSpecButtonShapeNextText { min-width: 44px !important; min-height: 44px !important; }',
     // Header logo link is 24px tall: pad it to 44 and cancel with negative margin so layout stays put.
