@@ -150,7 +150,9 @@
   var BOT = 'var(--taro-bot, env(safe-area-inset-bottom, 0px))';
   var NAVB = 'calc(' + NAV_H + 'px + ' + BOT + ')';  // tabs plus the navigation bar below them
   // Full-player parts that fade in as it opens (the artwork morphs instead).
-  var FADE = '.background-image, .background-gradient, #side-panel, #main-panel > :not(#music-player-wrapper)';
+  var PL = 'ytmusic-playlist-shelf-renderer ytmusic-responsive-list-item-renderer';
+  var AS = 'ytmusic-browse-response ytmusic-shelf-renderer ytmusic-responsive-list-item-renderer';
+  var FADE ='.background-image, .background-gradient, #side-panel, #main-panel > :not(#music-player-wrapper)';
   addStyle([
     // Inherited, so this also reaches into shadow roots.
     'html, * { -webkit-tap-highlight-color: transparent !important; }',
@@ -242,6 +244,19 @@
       ' ytmusic-menu-navigation-item-renderer, ytmusic-menu-service-item-renderer, ytmusic-toggle-menu-service-item-renderer)' +
       ' tp-yt-paper-ripple { visibility: hidden !important; }',
     'ytmusic-responsive-list-item-renderer[taro-leaving]::before { opacity: 0; transition: opacity .2s; }',
+    // Playlist-style song lists (artist's Top songs): like YouTube Music's app, a row is thumbnail, title, "artist • plays", menu.
+    // The multi-select checkbox only shows in select mode (#taro-select), as a check over the thumbnail.
+    PL + ' .fixed-columns { display: none !important; }',
+    'html.taro-select ' + PL + ' .fixed-columns { display: flex !important; position: absolute; left: 8px; top: 50%; width: 40px; height: 40px;' +
+      ' margin: -20px 0 0; align-items: center; justify-content: center; background: rgba(0,0,0,.55); border-radius: 6px; }',
+    // The same rows in the artist page's own Top songs shelf (no checkboxes there).
+    PL + ' .left-items, ' + PL + ' .left-items ytmusic-thumbnail-renderer, ' + AS + ' .left-items, ' + AS + ' .left-items ytmusic-thumbnail-renderer { width: 40px !important; height: 40px !important; min-width: 40px !important; }',
+    PL + ' .flex-columns, ' + AS + ' .flex-columns { flex: 1; min-width: 0; }',
+    PL + ' .secondary-flex-columns > .flex-column, ' + AS + ' .secondary-flex-columns > .flex-column { flex: 0 1 auto !important; width: auto !important; min-width: 0; max-width: none; }',
+    PL + ' .secondary-flex-columns > .flex-column:nth-child(n+3), ' + AS + ' .secondary-flex-columns > .flex-column:nth-child(n+3) { display: none !important; }',
+    '#taro-select { display: inline-block; vertical-align: top; height: 27px; margin: 0; padding: 0 12px; position: relative; background: none; border: 0;' +
+      ' outline: none; color: #fff; font: 500 14px/27px Roboto, sans-serif; }',
+    '#taro-select::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }',
     // Song menus (3-dots, long press): a bottom sheet over a darkened page. See watchMenu.
     '#taro-scrim { position: fixed; inset: 0; z-index: 102; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none;' +
       ' transition: opacity .25s; }',
@@ -394,6 +409,19 @@
         b.toggleAttribute('active', b.dataset.path === location.pathname);
       });
       add.toggleAttribute('shown', location.pathname === '/library');
+      // Select mode for song lists: a "Select" button after the Sort control, only where YouTube allows multi-select.
+      var selectable = document.querySelector('ytmusic-playlist-shelf-renderer[contents-multi-selectable]');
+      var sort = selectable && document.querySelector('yt-sort-filter-sub-menu-renderer');
+      if (sort && !sort.parentNode.querySelector('#taro-select')) {
+        var sel = document.createElement('button');
+        sel.id = 'taro-select';
+        sel.textContent = 'Select';
+        sel.addEventListener('click', function () {
+          sel.textContent = document.documentElement.classList.toggle('taro-select') ? 'Done' : 'Select';
+        });
+        sort.after(sel);
+      }
+      if (!sort) document.documentElement.classList.remove('taro-select');
       // YouTube adds its dropdowns to this container as menus are first opened.
       if (!menus && (menus = document.querySelector('ytmusic-popup-container'))) {
         fitMenus(menus);
