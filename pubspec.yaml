@@ -2,7 +2,7 @@
 description: "YouTube Music in an Android WebView, with ad blocking, background playback and mobile gestures."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.13.2
