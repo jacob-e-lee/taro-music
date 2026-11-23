@@ -2,6 +2,8 @@
 
 Taro Music turns the YouTube Music website into a proper mobile app.
 
+[![GitHub Release](https://img.shields.io/github/v/release/jacob-e-lee/taro-music?logo=github)](https://github.com/jacob-e-lee/taro-music/releases/latest)
+
 <div align="center">
 <table>
   <tr>
@@ -34,6 +36,12 @@ Taro Music turns the YouTube Music website into a proper mobile app.
   - Pull down to refresh Home, Explore and Library
   - Bottom navigation bar
   - Full screen (draws behind the Android status bar and navigation buttons)
+
+## Download
+
+Taro Music is Android only. Get the latest `taro-music-<version>.apk` from the [GitHub Releases](https://github.com/jacob-e-lee/taro-music/releases/latest) page and open it on your phone. Android will ask you to allow installing apps from your browser or file manager.
+
+To update, download the newer APK and install it over the old one. You stay signed in.
 
 ## How it works
 
