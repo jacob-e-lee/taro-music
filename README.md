@@ -47,6 +47,9 @@ To update, download the newer APK and install it over the old one. You stay sign
 
 - Wraps [music.youtube.com](https://music.youtube.com/) in an Android WebView.
 - Injects JavaScript to block ads and adapt the page for mobile.
+- Reports the playing track to Android, so the lock screen, notification and headset buttons work.
+
+For the full story of what was changed and why, see the [wiki page](docs/wiki/Home.md).
 
 ## Disclaimer
 

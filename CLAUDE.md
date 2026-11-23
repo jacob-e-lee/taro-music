@@ -10,6 +10,8 @@ An Android-only app that wraps the YouTube Music website (music.youtube.com) in 
 
 **Startup.** `MainActivity.onCreate` builds the `YtmWebView` straight away (`prewarmedWebView` in `YtmWebViewPlugin.kt`), so `loadUrl` runs ~0.3 s earlier than if it waited for Flutter to create the platform view; the factory hands that instance over, or builds one if none exists. `YtmWebView.visible` is set from `onPageCommitVisible` and read through `ready`. It is polled rather than pushed, because a push can land before Dart has set up its channel. Measured on the phone (cold start, `am start -W` only times the Flutter activity, so read page timings over DevTools): page load starts ~0.24 s after process start, first contentful paint ~1.95 s. The remaining ~1.6 s is YouTube's JS and data, and 33 of 49 resources already come from Chromium's cache, so there is nothing more to cache. A failed main-frame load (offline) shows our own "No connection" page (`OFFLINE_PAGE`, retries every 4 s); not tested offline, since the agent must not toggle phone network. The launch background is black (`launch_background.xml`, both copies) to match the loading screen.
 
+Release: pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the signed APK and attaches it to a GitHub release. F-Droid metadata is in `fastlane/`. A written overview of the app and every change is in [docs/wiki/Home.md](docs/wiki/Home.md); update it when behaviour changes.
+
 There is no desktop build. The app only runs on a real Android phone over USB, so all debugging goes through `adb`.
 
 ## Environment (Windows)

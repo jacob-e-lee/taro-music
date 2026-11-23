@@ -1,6 +1,6 @@
 # inject.js notes
 
-Moved out of CLAUDE.md. Read before editing `assets/ytm/inject.js`.
+Moved out of CLAUDE.md. Read before editing `assets/ytm/inject.js`. For the app overview, see [wiki/Home.md](wiki/Home.md).
 
 ## How injection works (read before editing inject.js)
 
