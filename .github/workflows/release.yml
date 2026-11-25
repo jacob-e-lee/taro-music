@@ -32,4 +32,7 @@ jobs:
         run: |
           apk="taro-music-${TAG#v}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "$apk"
-          gh release create "$TAG" "$apk" --title "$TAG" --generate-notes
+          # Fails if this version code has no notes.
+          code="$(sed -n 's/^version:.*+\([0-9]*\).*/\1/p' pubspec.yaml)"
+          gh release create "$TAG" "$apk" --title "$TAG" \
+            --notes-file "fastlane/metadata/android/en-US/changelogs/$code.txt" --generate-notes

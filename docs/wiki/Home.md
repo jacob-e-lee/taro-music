@@ -83,6 +83,7 @@ Fifteen seconds after load, the script logs a warning to logcat if a core elemen
 - **Package:** `io.github.jacob_e_lee.taro_music`.
 - **Signing:** release builds are signed with the project's own key. A GitHub Actions workflow (`.github/workflows/release.yml`) builds the APK on Linux when a `v*` tag is pushed and attaches `taro-music-<version>.apk` to the release. Linux matches F-Droid's build environment, so the two builds can be compared.
 - **F-Droid metadata** lives in `fastlane/metadata/android/en-US`.
+- **Release notes** are the files in [changelogs](../../fastlane/metadata/android/en-US/changelogs), named by version code (the number after `+` in `pubspec.yaml`). F-Droid shows them, and the workflow puts the matching one at the top of the GitHub release.
 - **Updating:** installing a newer APK over the old one keeps the user signed in.
 
 ## Development
