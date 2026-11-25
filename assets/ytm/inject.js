@@ -337,6 +337,10 @@
     '@media (orientation: portrait) { html:not(.taro-sheet) ytmusic-app-layout:not([player-page-open]) ytmusic-player-page { visibility: hidden !important; } }',
     // YouTube clears the full player's side margins a frame late, which would nudge the mini art right.
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { margin: 0 !important; }',
+    // Closed from the tabs view, YouTube stays in it: undo its art shrink and 64px panel shift.
+    // The panel keeps an identity transform: that makes it what the fixed mini art is positioned against.
+    'ytmusic-app-layout:not([player-page-open]) #player-page #player { transform: none !important; }',
+    'ytmusic-app-layout:not([player-page-open]) #player-page #main-panel { transform: translate(0) !important; }',
     // Own GPU layers, so each frame is only a compositor update (no layout or repaint).
     'html.taro-sheet ytmusic-player-page { will-change: transform; transition: none !important; }',
     'html.taro-sheet #taro-nav, html.taro-sheet ytmusic-app-layout > ytmusic-player-bar, html.taro-sheet #taro-shade,' +
@@ -783,6 +787,14 @@
   var next = function () { press(MINI + ' .next-button'); };
   var prev = function () { press(MINI + ' .previous-button'); };
   var isOpen = function () { return !!document.querySelector('ytmusic-app-layout[player-page-open]'); };
+  // Android Back with up next / lyrics / related up closes a song menu over it, then the panel;
+  // true tells the app it's handled.
+  window.__taroBack = function () {
+    var pg = isOpen() && document.querySelector('ytmusic-player-page[player-page-ui-state=TABS_VIEW]');
+    if (!pg) return false;
+    if (sheet) closeSheet(); else pg.polymerController.transition('FULL_PLAYER_VIEW');
+    return true;
+  };
 
   // ---- Player sheet: the player drawn at progress p (0 = mini player, 1 = full). -----
   // Drags and every open/close (tap, chevron, back) go through it, so the page follows
@@ -832,6 +844,13 @@
     var w = wrap.getBoundingClientRect(), s = Math.min(w.width - 64, w.height);
     var b = video ? { x: w.x, y: w.y, w: w.width, h: w.height }
       : coverBox || { x: w.x + (w.width - s) / 2, y: w.y, w: s, h: s };
+    // In the tabs view the art rests as a header thumbnail instead: YouTube's inline transform (still on #player
+    // while closed) centres it at 40px across, 32px below the panel's top, at the scale it holds.
+    var shrink = pg.getAttribute('player-page-ui-state') === 'TABS_VIEW' && img.closest('#player').style.transform;
+    if (shrink) {
+      var k = new DOMMatrix(shrink).a, top = parseFloat(getComputedStyle(pg.querySelector('#main-panel')).top);
+      b = { x: 40 - b.w * k / 2, y: top + 32 - b.h * k / 2, w: b.w * k, h: b.h * k };
+    }
     var side = Math.max(b.w, b.h);
     var full = { x: b.x + (b.w - side) / 2, y: b.y + (b.h - side) / 2, w: side, h: side };
     var clip = { y: (side - b.h) / 2, x: (side - b.w) / 2 };  // trimmed at the full end, in the copy's own px

@@ -1,1 +1,3 @@
 - The full player's cover art is now square
+- Back closes up next, lyrics or related before closing the player
+- Fixed the mini player's cover disappearing or animating at the wrong size around those panels

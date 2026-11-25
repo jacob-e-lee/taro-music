@@ -52,6 +52,7 @@ YouTube Music's mobile web layout is a stripped-down version of the desktop one.
 - **Touch feedback and tap guards.** Press highlights replace YouTube's ripples (a hidden zero-size ripple animates forever, so they are hidden with `visibility`, never `display: none`). Long presses and drifting touches no longer count as taps. Text selection and link dragging are off.
 - **Larger touch targets.** Small YouTube buttons are grown to 44 to 48 px.
 - **Search box.** The back arrow clears the query first, then closes the box.
+- **Android Back** closes an open up next / lyrics / related panel first (after any song menu over it); the next press closes the player.
 - **Stretch overscroll off**, so the fixed header, tab bar and mini player don't deform.
 
 ### Edge to edge
@@ -69,6 +70,8 @@ A failed main-frame load shows Taro Music's own "No connection" page, which retr
 ### Fixes for YouTube bugs
 
 For some accounts YouTube answers the signed-in home request with 400 "invalid argument", also in desktop browsers. The `fetch` hook retries that request signed out so Home isn't empty.
+
+Closing the player while up next / lyrics / related is open leaves YouTube's tabs-view layout on the closed player, which hid the mini player's cover. CSS undoes it while the player is closed.
 
 ### Performance
 
