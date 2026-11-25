@@ -1,1 +1,10 @@
 First release.
+- Ads blocked
+- Keeps playing with the screen off
+- Lock screen, notification and headset controls
+- Bottom tab bar and mobile-friendly layout
+- Swipe gestures and a draggable player
+- Song menus as a bottom sheet
+- Pull to refresh Home, Explore and Library
+- Draws behind the status and navigation bars
+- App icon, loading screen and offline page

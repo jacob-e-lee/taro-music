@@ -43,6 +43,8 @@ Taro Music is Android only. Get the latest `taro-music-<version>.apk` from the [
 
 To update, download the newer APK and install it over the old one. You stay signed in.
 
+What's new in each version is listed in the [release notes](fastlane/metadata/android/en-US/changelogs), one file per version code: `1.txt` is 1.0.0, `2.txt` is 1.0.1.
+
 ## How it works
 
 - Wraps [music.youtube.com](https://music.youtube.com/) in an Android WebView.
