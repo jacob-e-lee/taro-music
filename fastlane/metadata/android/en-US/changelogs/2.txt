@@ -1,1 +1,1 @@
-Release signing, so GitHub and F-Droid builds match.
+No new features. Releases are now signed with Taro Music's own key, so GitHub and F-Droid builds match.
