@@ -315,6 +315,13 @@
     'ytmusic-search-box[has-query]:not([opened]) .search-button { display: inline-block !important; }',
     'ytmusic-search-box:is([opened], [has-query]) #suggestion-list { left: 0 !important; right: 0 !important;' +
       ' width: auto !important; top: 48px !important; border: 0 !important; border-radius: 0 !important; }',
+    // YouTube caps the cover's height by the room left (inner height - 408px) but not its width, which
+    // leaves it wider than tall (296x285): cap the width the same, and centre it (auto margins end
+    // the flex stretch, hence width: 100%).
+    '@media (orientation: portrait) { ytmusic-app-layout[player-page-open] ytmusic-player-page[is-mweb-modernization-enabled]' +
+      ':not([video-mode], [player-fullscreened]) #player.ytmusic-player-page {' +
+      ' width: 100%; max-width: min(100vw - 64px, var(--ytmusic-player-page-inner-height) - 408px) !important;' +
+      ' margin-inline: auto !important; } }',
     // Our swipes own these areas; otherwise the browser pans the page underneath.
     '#player-page #main-panel, #player-page #player, ytmusic-app-layout > ytmusic-player-bar { touch-action: none; }',
     // Sheet mode (see setP): the player drawn part-way between mini and full, with the page behind visible.
@@ -818,13 +825,13 @@
     var live = video && videoCopy();
     art.style.display = live ? 'none' : '';
     if (vcopy) vcopy.style.display = live ? '' : 'none';
-    // YouTube's #player box, which needn't be square: for a video, the whole wrapper (the picture
-    // letterboxed in black); for a cover, the last reading at rest (see endSheet), else YouTube's layout
-    // (32px margins). The copy is a square showing the picture as YouTube does (a cover cropped to fill,
-    // a video letterboxed), trimmed to the box at the full end; in the mini player the box is 48px square.
-    var w = wrap.getBoundingClientRect();
+    // YouTube's #player box: for a video, the whole wrapper, which needn't be square (the picture
+    // letterboxed in black); for a cover, the last reading at rest (see endSheet), else our square layout
+    // (centred, at least 32px margins). The copy is a square showing the picture as YouTube does,
+    // trimmed to the box at the full end; in the mini player the box is 48px square.
+    var w = wrap.getBoundingClientRect(), s = Math.min(w.width - 64, w.height);
     var b = video ? { x: w.x, y: w.y, w: w.width, h: w.height }
-      : coverBox || { x: w.x + 32, y: w.y, w: w.width - 64, h: Math.min(w.width - 64, w.height) };
+      : coverBox || { x: w.x + (w.width - s) / 2, y: w.y, w: s, h: s };
     var side = Math.max(b.w, b.h);
     var full = { x: b.x + (b.w - side) / 2, y: b.y + (b.h - side) / 2, w: side, h: side };
     var clip = { y: (side - b.h) / 2, x: (side - b.w) / 2 };  // trimmed at the full end, in the copy's own px

@@ -46,7 +46,7 @@ YouTube Music's mobile web layout is a stripped-down version of the desktop one.
 
 - **Bottom tab bar and slimmer top bar** (48px each). The hamburger menu became a "New playlist" button on Library.
 - **Swipe gestures** between tabs.
-- **Draggable player sheet.** The player follows the finger between mini player and full player. Only `transform` and `opacity` change per frame, because anything that forces layout dropped drags to about 10 fps. The cover art is copied and morphed onto YouTube's real art box, and music videos get a live muted copy so motion doesn't freeze while YouTube's code blocks the page.
+- **Draggable player sheet.** The player follows the finger between mini player and full player. Only `transform` and `opacity` change per frame, because anything that forces layout dropped drags to about 10 fps. The cover art is copied and morphed onto YouTube's real art box (which we make square: YouTube's is slightly wider than tall), and music videos get a live muted copy so motion doesn't freeze while YouTube's code blocks the page.
 - **Song menu as a bottom sheet** with title, artist, a like button, drag-to-close and swipe-up to grow. YouTube's menu is a small floating popup, hard to use with a thumb.
 - **Pull to refresh** on Home, Explore and Library. It refetches the page through YouTube's own navigation, so playback continues.
 - **Touch feedback and tap guards.** Press highlights replace YouTube's ripples (a hidden zero-size ripple animates forever, so they are hidden with `visibility`, never `display: none`). Long presses and drifting touches no longer count as taps. Text selection and link dragging are off.
