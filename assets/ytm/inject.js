@@ -836,6 +836,13 @@
     var w = wrap.getBoundingClientRect(), s = Math.min(w.width - 64, w.height);
     var b = video ? { x: w.x, y: w.y, w: w.width, h: w.height }
       : coverBox || { x: w.x + (w.width - s) / 2, y: w.y, w: s, h: s };
+    // In the tabs view the art rests as a header thumbnail instead: YouTube's inline transform (still on #player
+    // while closed) centres it at 40px across, 32px below the panel's top, at the scale it holds.
+    var shrink = pg.getAttribute('player-page-ui-state') === 'TABS_VIEW' && img.closest('#player').style.transform;
+    if (shrink) {
+      var k = new DOMMatrix(shrink).a, top = parseFloat(getComputedStyle(pg.querySelector('#main-panel')).top);
+      b = { x: 40 - b.w * k / 2, y: top + 32 - b.h * k / 2, w: b.w * k, h: b.h * k };
+    }
     var side = Math.max(b.w, b.h);
     var full = { x: b.x + (b.w - side) / 2, y: b.y + (b.h - side) / 2, w: side, h: side };
     var clip = { y: (side - b.h) / 2, x: (side - b.w) / 2 };  // trimmed at the full end, in the copy's own px
