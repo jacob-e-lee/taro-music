@@ -70,6 +70,8 @@ A failed main-frame load shows Taro Music's own "No connection" page, which retr
 
 For some accounts YouTube answers the signed-in home request with 400 "invalid argument", also in desktop browsers. The `fetch` hook retries that request signed out so Home isn't empty.
 
+Closing the player with Android Back while up next / lyrics / related is open leaves YouTube's tabs-view layout on the closed player, which hid the mini player's cover. CSS undoes it while the player is closed.
+
 ### Performance
 
 Idle work was cut from about 850 ms to under 20 ms of main-thread time per 10 seconds by removing timers that walked the whole page. Rules that came out of it: no timers that scan the DOM, no `body:has(...)` selectors, and state mirrored onto `<html>` classes. Disabling YouTube's IntersectionObservers was tested and rejected, since other features may rely on them.

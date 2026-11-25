@@ -337,6 +337,10 @@
     '@media (orientation: portrait) { html:not(.taro-sheet) ytmusic-app-layout:not([player-page-open]) ytmusic-player-page { visibility: hidden !important; } }',
     // YouTube clears the full player's side margins a frame late, which would nudge the mini art right.
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { margin: 0 !important; }',
+    // Closed from the tabs view (Android Back), YouTube stays in it: undo its art shrink and 64px panel shift.
+    // The panel keeps an identity transform: that makes it what the fixed mini art is positioned against.
+    'ytmusic-app-layout:not([player-page-open]) #player-page #player { transform: none !important; }',
+    'ytmusic-app-layout:not([player-page-open]) #player-page #main-panel { transform: translate(0) !important; }',
     // Own GPU layers, so each frame is only a compositor update (no layout or repaint).
     'html.taro-sheet ytmusic-player-page { will-change: transform; transition: none !important; }',
     'html.taro-sheet #taro-nav, html.taro-sheet ytmusic-app-layout > ytmusic-player-bar, html.taro-sheet #taro-shade,' +
