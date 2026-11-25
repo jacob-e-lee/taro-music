@@ -337,7 +337,7 @@
     '@media (orientation: portrait) { html:not(.taro-sheet) ytmusic-app-layout:not([player-page-open]) ytmusic-player-page { visibility: hidden !important; } }',
     // YouTube clears the full player's side margins a frame late, which would nudge the mini art right.
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { margin: 0 !important; }',
-    // Closed from the tabs view (Android Back), YouTube stays in it: undo its art shrink and 64px panel shift.
+    // Closed from the tabs view, YouTube stays in it: undo its art shrink and 64px panel shift.
     // The panel keeps an identity transform: that makes it what the fixed mini art is positioned against.
     'ytmusic-app-layout:not([player-page-open]) #player-page #player { transform: none !important; }',
     'ytmusic-app-layout:not([player-page-open]) #player-page #main-panel { transform: translate(0) !important; }',
@@ -787,6 +787,14 @@
   var next = function () { press(MINI + ' .next-button'); };
   var prev = function () { press(MINI + ' .previous-button'); };
   var isOpen = function () { return !!document.querySelector('ytmusic-app-layout[player-page-open]'); };
+  // Android Back with up next / lyrics / related up closes a song menu over it, then the panel;
+  // true tells the app it's handled.
+  window.__taroBack = function () {
+    var pg = isOpen() && document.querySelector('ytmusic-player-page[player-page-ui-state=TABS_VIEW]');
+    if (!pg) return false;
+    if (sheet) closeSheet(); else pg.polymerController.transition('FULL_PLAYER_VIEW');
+    return true;
+  };
 
   // ---- Player sheet: the player drawn at progress p (0 = mini player, 1 = full). -----
   // Drags and every open/close (tap, chevron, back) go through it, so the page follows

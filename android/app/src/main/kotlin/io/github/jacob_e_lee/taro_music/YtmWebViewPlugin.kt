@@ -42,16 +42,17 @@ private class YtmPlatformView(
     override fun getView(): View = webView
 
     /**
-     * `back`: navigates back and answers true, or answers false at the first page.
+     * `back`: lets the page handle it (closing a panel) or navigates back, and answers true;
+     * answers false at the first page.
      * `ready`: answers whether the page has painted yet.
      */
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "ready" -> result.success(webView.visible)
-            "back" -> {
-                val canGoBack = webView.canGoBack()
-                if (canGoBack) webView.goBack()
-                result.success(canGoBack)
+            "back" -> webView.evaluateJavascript("!!(window.__taroBack && __taroBack())") { handled ->
+                val goBack = handled != "true" && webView.canGoBack()
+                if (goBack) webView.goBack()
+                result.success(handled == "true" || goBack)
             }
             else -> result.notImplemented()
         }
